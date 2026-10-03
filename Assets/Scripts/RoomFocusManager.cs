@@ -102,6 +102,9 @@ public class RoomFocusManager : MonoBehaviour
         if (orbitCamera != null)
             orbitCamera.freeMode = isFreeMode;
 
+        if (Application.isMobilePlatform)
+            VirtualJoystick.SetVisible(isFreeMode);
+
         UpdateFreeModeUI();
         Debug.Log($"[Room] Free Mode: {(isFreeMode ? "AKTIF" : "NONAKTIF")}");
 
@@ -114,15 +117,18 @@ public class RoomFocusManager : MonoBehaviour
         isFreeMode = false;
         if (orbitCamera != null)
             orbitCamera.freeMode = false;
+        if (Application.isMobilePlatform)
+            VirtualJoystick.SetVisible(false);
         UpdateFreeModeUI();
     }
 
-    /// <summary>Paksa free mode ON — dipanggil saat simulasi berjalan agar player bisa jalan bebas.</summary>
     public void ForceEnterFreeMode()
     {
         isFreeMode = true;
         if (orbitCamera != null)
             orbitCamera.freeMode = true;
+        if (Application.isMobilePlatform)
+            VirtualJoystick.SetVisible(true);
         UpdateFreeModeUI();
     }
 

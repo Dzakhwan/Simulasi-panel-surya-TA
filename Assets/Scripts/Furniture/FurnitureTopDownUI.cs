@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -63,8 +64,9 @@ public class FurnitureTopDownUI : MonoBehaviour
 
         if (FurnitureManager.Instance == null) return;
 
-        var placedData = FurnitureManager.Instance.GetPlacedFurnitureData();
-        if (placedData == null || placedData.Count == 0) return;
+        // Multi-instance: list berisi duplikat → satu kartu per instance terpasang.
+        var placedData = new List<FurnitureData>(FurnitureManager.Instance.GetPlacedFurnitureData());
+        if (placedData.Count == 0) return;
 
         int index = 1;
         foreach (FurnitureData data in placedData)

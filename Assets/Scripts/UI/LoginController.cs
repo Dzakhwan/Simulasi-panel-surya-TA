@@ -62,7 +62,7 @@ public class LoginController : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Tab))
+        if (GameInput.Player.Tab.WasPressedThisFrame())
         {
             EventSystem system = EventSystem.current;
             if (system == null) return;
@@ -73,7 +73,7 @@ public class LoginController : MonoBehaviour
                 Selectable currentSelectable = system.currentSelectedGameObject.GetComponent<Selectable>();
                 if (currentSelectable != null)
                 {
-                    bool isShiftDown = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+                    bool isShiftDown = GameInput.Player.Shift.IsPressed();
 
                     Selectable next = isShiftDown ?
                         currentSelectable.FindSelectableOnUp() :

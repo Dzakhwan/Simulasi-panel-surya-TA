@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// Kamera orbit 360° — klik kanan + drag untuk putar, scroll untuk zoom.
@@ -7,48 +8,41 @@ using UnityEngine;
 public class OrbitCamera : MonoBehaviour
 {
     [Header("Target")]
-    public Transform target;                 // Titik pusat orbit (buat Empty di tengah rumah)
-    public Vector3 targetOffset = Vector3.up; // Offset supaya kamera ngarah sedikit ke atas
+    public Transform target;
+    public Vector3 targetOffset = Vector3.up;
 
     [Header("Orbit Settings")]
-    public float initialYaw    = 180f;        // Sudut awal horizontal (180 = menghadap rumah)
-    public float initialPitch  = 35f;         // Sudut awal vertikal (35 = dari atas serong)
+    public float initialYaw    = 180f;
+    public float initialPitch  = 35f;
     public float rotationSpeed = 5f;
-    public float distance      = 12f;        // Jarak awal kamera ke target
+    public float distance      = 12f;
     public float minDistance    = 3f;
     public float maxDistance    = 30f;
     public float zoomSpeed     = 3f;
 
     [Header("Vertical Limits (derajat)")]
-    public float minVerticalAngle = 10f;      // Batas bawah (jangan sampai di bawah lantai)
-    public float maxVerticalAngle = 80f;      // Batas atas
+    public float minVerticalAngle = 10f;
+    public float maxVerticalAngle = 80f;
 
     [Header("Pan (Geser)")]
     public float panSpeed = 0.3f;
-    public float wasdSpeed = 500f;              // Kecepatan gerak WASD
-    [SerializeField] KeyCode flyKey = KeyCode.Space;
-    [SerializeField] KeyCode downKey = KeyCode.LeftControl;
+    public float wasdSpeed = 500f;
     public float flyForce = 5f;
     Vector3 velocity;
 
-    // ── Free Mode ──
-    [HideInInspector]
-    public bool freeMode = false;             // WASD hanya aktif saat free mode
+    [Header("Touch Sensitivity")]
+    public float touchPanSensitivity = 0.02f;
+    public float touchRotateSensitivity = 1.5f;
+    public float touchZoomSensitivity = 0.05f;
 
-    /// <summary>
-    /// Kunci semua input kamera (orbit, zoom, pan, WASD).
-    /// Set true saat simulasi berjalan, false setelah simulasi selesai.
-    /// </summary>
-    [HideInInspector]
-    public bool inputLocked = false;
+    [HideInInspector] public bool freeMode = false;
+    [HideInInspector] public bool inputLocked = false;
 
-    // ── Internal ──
-    private float yaw;       // rotasi horizontal
-    private float pitch;     // rotasi vertikal
+    private float yaw;
+    private float pitch;
     private Vector3 panOffset;
     private float _initialDistance;
 
-    // ── Smooth Transition ──
     private bool isTransitioning = false;
     private Vector3 transitionTargetPos;
     private float transitionDuration;
@@ -57,13 +51,11 @@ public class OrbitCamera : MonoBehaviour
 
     void Start()
     {
-        // Pakai sudut awal yang sudah diset di Inspector
         yaw   = initialYaw;
         pitch = initialPitch;
         panOffset = Vector3.zero;
         _initialDistance = distance;
 
-        // Kalau belum ada target, buat otomatis di (0,0,0)
         if (target == null)
         {
             GameObject pivot = new GameObject("CameraTarget");
@@ -76,21 +68,18 @@ public class OrbitCamera : MonoBehaviour
     {
         if (target == null) return;
 
-        // Handle smooth transition ke ruangan
         if (isTransitioning)
         {
             HandleTransition();
             return;
         }
 
-        // Semua input diblokir saat simulasi berjalan
         if (!inputLocked)
         {
             HandleRotation();
             HandleZoom();
             HandlePan();
 
-            // WASD hanya aktif saat free mode
             if (freeMode)
                 HandleWASD();
         }
@@ -100,62 +89,79 @@ public class OrbitCamera : MonoBehaviour
 
     void HandleRotation()
     {
-        // Klik kanan + drag untuk rotate di semua mode
-        if (Input.GetMouseButton(1))
+        var player = GameInput.Player;
+
+        if (player.RightClick.IsPressed())
         {
-            yaw   += Input.GetAxis("Mouse X") * rotationSpeed;
-            pitch -= Input.GetAxis("Mouse Y") * rotationSpeed;
+            Vector2 delta = player.MouseDelta.ReadValue<Vector2>();
+            yaw   += delta.x * rotationSpeed * 0.1f;
+            pitch -= delta.y * rotationSpeed * 0.1f;
             pitch  = Mathf.Clamp(pitch, minVerticalAngle, maxVerticalAngle);
+        }
+
+        if (TouchGestureController.RotateDelta != 0f)
+        {
+            yaw += TouchGestureController.RotateDelta * touchRotateSensitivity;
         }
     }
 
     void HandleZoom()
     {
-        float scroll = Input.GetAxis("Mouse ScrollWheel");
-        if (Mathf.Abs(scroll) > 0.01f)
+        Vector2 scroll = GameInput.Player.Zoom.ReadValue<Vector2>();
+        if (Mathf.Abs(scroll.y) > 0.01f)
         {
-            distance -= scroll * zoomSpeed;
+            distance -= scroll.y * zoomSpeed * 0.01f;
+            distance  = Mathf.Clamp(distance, minDistance, maxDistance);
+        }
+
+        if (TouchGestureController.PinchDelta != 0f)
+        {
+            distance -= TouchGestureController.PinchDelta * touchZoomSensitivity;
             distance  = Mathf.Clamp(distance, minDistance, maxDistance);
         }
     }
 
     void HandlePan()
     {
-        // Klik tengah (scroll click) + drag untuk geser
-        if (Input.GetMouseButton(2))
+        if (GameInput.Player.MiddleClick.IsPressed())
         {
-            float h = -Input.GetAxis("Mouse X") * panSpeed;
-            float v = -Input.GetAxis("Mouse Y") * panSpeed;
+            Vector2 delta = GameInput.Player.MouseDelta.ReadValue<Vector2>();
+            float h = -delta.x * panSpeed * 0.01f;
+            float v = -delta.y * panSpeed * 0.01f;
             panOffset += transform.right * h + transform.up * v;
+        }
+
+        if (TouchGestureController.DragDelta != Vector2.zero)
+        {
+            Vector2 drag = TouchGestureController.DragDelta;
+            panOffset -= transform.right * drag.x * touchPanSensitivity;
+            panOffset -= transform.up    * drag.y * touchPanSensitivity;
         }
     }
 
     void HandleWASD()
     {
-        // Gerak kamera pakai WASD
-        float h = 0f, v = 0f, upDown = 0f;
+        Vector2 move = GameInput.Player.Move.ReadValue<Vector2>();
+        float moveY  = GameInput.Player.MoveY.ReadValue<float>();
+        bool sprint  = GameInput.Player.Sprint.IsPressed();
 
-        if (Input.GetKey(KeyCode.W)) v =  1f;
-        if (Input.GetKey(KeyCode.S)) v = -1f;
-        if (Input.GetKey(KeyCode.A)) h = -1f;
-        if (Input.GetKey(KeyCode.D)) h =  1f;
-        if (Input.GetKey(flyKey)) upDown = 1f;
-        if (Input.GetKey(downKey)) upDown = -1f;
+        if (VirtualJoystick.Instance != null && VirtualJoystick.Instance.gameObject.activeSelf)
+        {
+            if (move == Vector2.zero)
+                move = VirtualJoystick.MoveInput;
+            if (moveY == 0f)
+                moveY = VirtualJoystick.MoveYInput;
+        }
+
+        float h = move.x;
+        float v = move.y;
+        float upDown = moveY;
 
         float speed = wasdSpeed * Time.deltaTime;
+        if (sprint) speed *= 2.5f;
 
-        // Shift untuk gerak lebih cepat
-        if (Input.GetKey(KeyCode.LeftShift))
-            speed *= 2.5f;
-
-        // Gerak berdasarkan arah kamera (horizontal plane)
-        Vector3 forward = transform.forward;
-        forward.y = 0;
-        forward.Normalize();
-
-        Vector3 right = transform.right;
-        right.y = 0;
-        right.Normalize();
+        Vector3 forward = transform.forward; forward.y = 0; forward.Normalize();
+        Vector3 right   = transform.right;   right.y   = 0; right.Normalize();
 
         panOffset += (right * h + forward * v + Vector3.up * upDown) * speed;
     }
@@ -170,14 +176,8 @@ public class OrbitCamera : MonoBehaviour
         transform.position = position;
     }
 
-    // ── Public: Smooth transition ke posisi baru ──
-
-    /// <summary>
-    /// Pindahkan kamera fokus ke posisi tertentu dengan smooth
-    /// </summary>
     public void FocusOnPosition(Vector3 worldPosition, float duration = 1.2f)
     {
-        // Hitung offset yang dibutuhkan
         transitionStartOffset = panOffset;
         transitionTargetPos = worldPosition - target.position - targetOffset;
         transitionDuration = duration;
@@ -185,9 +185,6 @@ public class OrbitCamera : MonoBehaviour
         isTransitioning = true;
     }
 
-    /// <summary>
-    /// Reset kamera ke posisi awal — yaw, pitch, distance, dan panOffset dikembalikan ke nilai awal.
-    /// </summary>
     public void ResetToOrigin(float duration = 1.2f)
     {
         yaw      = initialYaw;
@@ -197,11 +194,6 @@ public class OrbitCamera : MonoBehaviour
         FocusOnPosition(target.position + targetOffset, duration);
     }
 
-    /// <summary>
-    /// Langsung posisikan kamera sesuai parameter orbit saat ini (pitch, yaw, distance, target)
-    /// tanpa menunggu LateUpdate. Batalkan transisi yang sedang berjalan.
-    /// Gunakan ini setelah restore orbit state dari luar agar kamera tidak tertinggal di posisi lama.
-    /// </summary>
     public void SnapToCurrentOrbitState()
     {
         isTransitioning = false;
@@ -214,7 +206,6 @@ public class OrbitCamera : MonoBehaviour
         transform.position  = focusPoint - rotation * Vector3.forward * distance;
     }
 
-    /// <summary>Posisi kamera yang dihitung dari parameter orbit saat ini, tanpa menggerakkan kamera.</summary>
     public Vector3 GetOrbitPosition()
     {
         if (target == null) return transform.position;
@@ -223,7 +214,6 @@ public class OrbitCamera : MonoBehaviour
         return focusPoint - rotation * Vector3.forward * distance;
     }
 
-    /// <summary>Rotasi kamera yang dihitung dari parameter orbit saat ini.</summary>
     public Quaternion GetOrbitRotation()
     {
         return Quaternion.Euler(pitch, yaw, 0);
@@ -232,10 +222,7 @@ public class OrbitCamera : MonoBehaviour
     void HandleTransition()
     {
         transitionElapsed += Time.deltaTime;
-        float t = transitionElapsed / transitionDuration;
-
-        // Smooth easing
-        t = Mathf.Clamp01(t);
+        float t = Mathf.Clamp01(transitionElapsed / transitionDuration);
         t = t * t * (3f - 2f * t);
 
         panOffset = Vector3.Lerp(transitionStartOffset, transitionTargetPos, t);

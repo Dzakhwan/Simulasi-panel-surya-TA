@@ -166,7 +166,7 @@ public class BatteryInstaller : MonoBehaviour
 
         HandleHover();
 
-        if (Input.GetMouseButtonDown(0))
+        if (GameInput.Player.Click.WasPressedThisFrame())
             HandleClick();
     }
 
@@ -174,7 +174,7 @@ public class BatteryInstaller : MonoBehaviour
 
     private void HandleHover()
     {
-        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        Ray ray = Camera.main.ScreenPointToRay(GameInput.PointerPosition);
 
         if (!Physics.Raycast(ray, out RaycastHit hit, 1000f))
         {
@@ -216,7 +216,7 @@ public class BatteryInstaller : MonoBehaviour
         }
 
         // Raycast untuk deteksi klik ke slot terisi atau baterai langsung
-        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        Ray ray = Camera.main.ScreenPointToRay(GameInput.PointerPosition);
         if (Physics.Raycast(ray, out RaycastHit hit, 1000f))
         {
             // Slot collider menghalangi raycast ke battery mesh — cek dulu apakah
@@ -765,7 +765,7 @@ public class BatteryInstaller : MonoBehaviour
         if (batteryInfoCard != null && batteryInfoCard.activeSelf)
         {
             RectTransform rt = batteryInfoCard.GetComponent<RectTransform>();
-            if (rt != null && RectTransformUtility.RectangleContainsScreenPoint(rt, Input.mousePosition, null))
+            if (rt != null && RectTransformUtility.RectangleContainsScreenPoint(rt, GameInput.PointerPosition, null))
                 return true;
         }
         return false;

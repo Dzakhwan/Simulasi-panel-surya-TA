@@ -970,7 +970,7 @@ public class SolarPanelInstaller : MonoBehaviour
 
     void HandlePanelPlacement()
     {
-        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        Ray ray = Camera.main.ScreenPointToRay(GameInput.PointerPosition);
         RaycastHit hit;
 
         // Blokir klik hanya jika pointer tepat di atas UI yang terdaftar sebagai blocker
@@ -1003,7 +1003,7 @@ public class SolarPanelInstaller : MonoBehaviour
                 }
             }
 
-            if (Input.GetMouseButtonDown(0) && !overAnyUI)
+            if (GameInput.PrimaryPressed() && !overAnyUI)
             {
                 if (occupied)
                 {
@@ -1024,7 +1024,7 @@ public class SolarPanelInstaller : MonoBehaviour
                 ghostPanel.SetActive(false);
 
             // Klik kiri di luar atap → tutup card (hanya jika tidak klik UI)
-            if (Input.GetMouseButtonDown(0) && !overAnyUI)
+            if (GameInput.PrimaryPressed() && !overAnyUI)
                 HidePanelCard();
         }
     }
@@ -1036,7 +1036,7 @@ public class SolarPanelInstaller : MonoBehaviour
     /// </summary>
     bool IsPointerOverBlockerUI()
     {
-        Vector2 screenPos = Input.mousePosition;
+        Vector2 screenPos = GameInput.PointerPosition;
 
         // Cek panelInfoCard
         if (panelInfoCard != null && panelInfoCard.activeSelf)

@@ -37,12 +37,10 @@ public class FurnitureInstaller : MonoBehaviour
 
     private void Awake()
     {
-        //if (Instance != null && Instance != this)
-        //{
-        //    Destroy(gameObject);
-        //    return;
-        //}
-        //Instance = this;
+        // NOTE: Singleton sengaja NONAKTIF. Di scene Simulasi ada 2 instance FurniturInstaller
+        // (satu nyasar di tombol "InstallBattery"); memaksa singleton akan me-Destroy salah
+        // satu dan bisa menghilangkan tombol "Pasang Alat Elektronik" (installer menempel
+        // langsung di tombol tsb). Gunakan FindObjectsByType di luar untuk menemukan yang benar.
     }
 
     private void Start()
@@ -126,6 +124,10 @@ public class FurnitureInstaller : MonoBehaviour
     {
         _isFurnitureMode = false;
 
+        // Batalkan proses penempatan / seleksi yang sedang berjalan
+        if (FurniturePlacementController.Instance != null)
+            FurniturePlacementController.Instance.CancelPlacement();
+
         // Animasikan slide-out lalu nonaktifkan panel
         if (uiLeftSlider != null)
             uiLeftSlider.SlideOut();
@@ -142,6 +144,10 @@ public class FurnitureInstaller : MonoBehaviour
     public void ForceExitMode()
     {
         _isFurnitureMode = false;
+
+        // Batalkan proses penempatan / seleksi yang sedang berjalan
+        if (FurniturePlacementController.Instance != null)
+            FurniturePlacementController.Instance.CancelPlacement();
 
         // Langsung sembunyikan tanpa animasi saat force exit
         if (uiLeftSlider != null)

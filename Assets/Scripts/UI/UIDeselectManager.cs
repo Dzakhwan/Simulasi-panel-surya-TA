@@ -5,7 +5,7 @@ public class UIDeselectManager : MonoBehaviour
 {
     void Update()
     {
-        if (Input.GetMouseButtonUp(0))
+        if (GameInput.Player.Click.WasReleasedThisFrame())
         {
             if (EventSystem.current.currentSelectedGameObject != null)
             {

@@ -74,15 +74,23 @@ public class FurnitureCardUI : MonoBehaviour, IPointerEnterHandler, IPointerExit
 
     void OnTambahClicked()
     {
-        if (FurnitureManager.Instance == null) return;
+        // Mode multi-instance: mulai click-to-place.
+        // Setelah ditempatkan, tombol Tambah tetap tersedia untuk instance berikutnya.
+        if (FurniturePlacementController.Instance == null)
+        {
+            Debug.LogWarning("[FurnitureCardUI] FurniturePlacementController belum ada di scene.");
+            return;
+        }
 
-        // 1. Tambahkan furnitur
-        FurnitureManager.Instance.AddFurniture(data);
+        FurniturePlacementController.Instance.BeginPlacement(data, this);
+    }
 
-        // 2. Perbarui struktur tombol (hilangkan Tambah, munculkan Konfigurasi & Hapus)
+    /// <summary>
+    /// Dipanggil FurniturePlacementController saat instance baru berhasil ditempatkan.
+    /// </summary>
+    public void OnPlacementComplete()
+    {
         RefreshButtonState();
-
-        // 3. Langsung buka panel konfigurasi secara otomatis!
         OpenConfigPanel();
     }
 
@@ -119,18 +127,17 @@ public class FurnitureCardUI : MonoBehaviour, IPointerEnterHandler, IPointerExit
     }
 
     /// <summary>
-    /// Mengatur visibilitas tombol berdasarkan status furnitur di FurnitureManager
+    /// Mengatur visibilitas tombol berdasarkan status furnitur di FurnitureManager.
+    /// Mode multi-instance: tombol Tambah selalu tampil; Konfigurasi/Hapus katalog
+    /// disembunyikan karena hapus & atur jam kini via klik model 3D di dunia.
     /// </summary>
     void RefreshButtonState()
     {
-        if (FurnitureManager.Instance == null) return;
-
-        bool alreadyPlaced = FurnitureManager.Instance.IsPlaced(data);
-
-        // Langsung hide/unhide tombolnya satu per satu
-        if (tambahBtn != null) tambahBtn.gameObject.SetActive(!alreadyPlaced);
-        if (configButton != null) configButton.gameObject.SetActive(alreadyPlaced);
-        if (deleteBtn != null) deleteBtn.gameObject.SetActive(alreadyPlaced);
+        if (tambahBtn != null) tambahBtn.gameObject.SetActive(true);
+        if (configButton != null) configButton.gameObject.SetActive(false);
+        if (deleteBtn != null) deleteBtn.gameObject.SetActive(false);
+        if (placedButtonsContainer != null)
+            placedButtonsContainer.SetActive(false);
     }
 
     // ── Hover Effects ──────────────────────────────────────────────────────
