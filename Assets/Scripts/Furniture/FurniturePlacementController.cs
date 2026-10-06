@@ -20,6 +20,9 @@ public class FurniturePlacementController : MonoBehaviour
     [Tooltip("Layer untuk raycast lantai saat menempatkan. Jika 0, otomatis memakai layer 'Floor'.")]
     [SerializeField] private LayerMask floorLayerMask = 0;
 
+    [Tooltip("Jarak placement barang")]
+    [SerializeField] private float placementDistance = 900f;
+
     [Tooltip("Tidak dipakai lagi (fallback bidang lantai dihapus). Dipertahankan agar nilai lama tidak hilang.")]
     [SerializeField] private float floorPlaneY = 0f;
 
@@ -54,6 +57,7 @@ public class FurniturePlacementController : MonoBehaviour
     // Seleksi
     private GameObject _selectedInstance;
     private GameObject _infoCard;
+    private GameObject _placementUI;
     private FurnitureInstaller[] _installers = System.Array.Empty<FurnitureInstaller>();
 
     // Deteksi TAP (tekan-lepas tanpa geser) agar drag kamera tidak menempatkan/memilih
@@ -194,6 +198,20 @@ public class FurniturePlacementController : MonoBehaviour
 
         _ghost.SetActive(false);
         Debug.Log($"[FurniturePlacement] Mode penempatan: {data.furnitureName}");
+
+        // Spawn langsung di tengah layar
+        Vector2 center = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+        _ghostValid = TryGetFloorPoint(center, out Vector3 floorPoint);
+        if (_ghostValid)
+        {
+            _ghost.transform.position = floorPoint;
+            if (TryGetLowestY(_ghost, out float lowY))
+                _ghost.transform.position = floorPoint + Vector3.up * (floorPoint.y - lowY);
+            _ghost.SetActive(true);
+            SetGhostTint(true);
+        }
+
+        ShowPlacementUI();
     }
 
     /// <summary>
@@ -220,6 +238,11 @@ public class FurniturePlacementController : MonoBehaviour
         {
             Destroy(_ghost);
             _ghost = null;
+        }
+        if (_placementUI != null)
+        {
+            Destroy(_placementUI);
+            _placementUI = null;
         }
         _data = null;
         _sourceCard = null;
@@ -252,32 +275,34 @@ public class FurniturePlacementController : MonoBehaviour
         if ((GameInput.Player.RotateRight.WasPressedThisFrame() || TouchGestureController.RotateDelta > 0.1f))
             RotateGhost(rotationStep);
 
-        // Update posisi ghost mengikuti pointer
-        if (_ghost != null)
+        // Update posisi ghost mengikuti pointer hanya jika di-drag
+        if (_ghost != null && GameInput.Player.Click.IsPressed())
         {
             Vector2 pointer = GameInput.PointerPosition;
-            _ghostValid = TryGetFloorPoint(pointer, out Vector3 floorPoint);
-
-            if (_ghostValid)
+            if (!GameInput.IsPointerOverInteractiveUI(pointer))
             {
-                _ghost.SetActive(true);
-                _ghost.transform.position = floorPoint;
-                if (TryGetLowestY(_ghost, out float lowY))
-                    _ghost.transform.position = floorPoint + Vector3.up * (floorPoint.y - lowY);
+                _ghostValid = TryGetFloorPoint(pointer, out Vector3 floorPoint);
 
-                // INVALID: ada bangunan/objek di antara kamera & titik lantai
-                // (mencegah ghost menembus dinding). Lantai tidak ikut diblokir.
-                Ray occRay = _cam.ScreenPointToRay(pointer);
-                float distToFloor = Vector3.Distance(_cam.transform.position, floorPoint);
-                if (Physics.Raycast(occRay, out _, distToFloor - 0.1f, ~floorLayerMask, QueryTriggerInteraction.Ignore))
-                    _ghostValid = false;
-            }
-            else
-            {
-                _ghost.SetActive(false);
-            }
+                if (_ghostValid)
+                {
+                    _ghost.SetActive(true);
+                    _ghost.transform.position = floorPoint;
+                    if (TryGetLowestY(_ghost, out float lowY))
+                        _ghost.transform.position = floorPoint + Vector3.up * (floorPoint.y - lowY);
 
-            SetGhostTint(_ghostValid);
+                    // INVALID: ada bangunan/objek di antara kamera & titik lantai
+                    Ray occRay = _cam.ScreenPointToRay(pointer);
+                    float distToFloor = Vector3.Distance(_cam.transform.position, floorPoint);
+                    if (Physics.Raycast(occRay, out _, distToFloor - 0.1f, ~floorLayerMask, QueryTriggerInteraction.Ignore))
+                        _ghostValid = false;
+                }
+                else
+                {
+                    _ghost.SetActive(false);
+                }
+
+                SetGhostTint(_ghostValid);
+            }
         }
 
         // Batalkan dengan Esc (Cancel)
@@ -287,13 +312,6 @@ public class FurniturePlacementController : MonoBehaviour
             CancelPlacement();
             return;
         }
-
-        // Commit: TAP di luar UI interaktif, setelah cooldown
-        if (!_tapReleased) return;
-        if (Time.time - _beginTime < placementCooldown) return;
-        if (GameInput.IsPointerOverInteractiveUI(GameInput.PointerPosition)) return;
-
-        CommitPlacement();
     }
 
     private void RotateGhost(float degrees)
@@ -301,6 +319,34 @@ public class FurniturePlacementController : MonoBehaviour
         _ghostRotY += degrees;
         if (_ghost != null)
             _ghost.transform.rotation = Quaternion.Euler(0f, _ghostRotY, 0f);
+    }
+
+    private void ShowPlacementUI()
+    {
+        if (_placementUI != null) return;
+        Canvas canvas = FindOverlayCanvas();
+        if (canvas == null) return;
+
+        GameObject ui = new GameObject("PlacementUI", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+        ui.transform.SetParent(canvas.transform, false);
+
+        RectTransform rt = ui.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 0.05f);
+        rt.anchorMax = new Vector2(0.5f, 0.05f);
+        rt.pivot = new Vector2(0.5f, 0f);
+        rt.anchoredPosition = Vector2.zero;
+        rt.sizeDelta = new Vector2(300f, 45f);
+
+        var layout = ui.GetComponent<HorizontalLayoutGroup>();
+        layout.spacing = 20f;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+
+        AddButton(ui.transform, "Batal (X)", deleteButtonColor, CancelPlacement);
+        AddButton(ui.transform, "Pasang (V)", new Color(0.2f, 0.7f, 0.3f, 1f), CommitPlacement);
+
+        _placementUI = ui;
     }
 
     private void CommitPlacement()
@@ -329,7 +375,7 @@ public class FurniturePlacementController : MonoBehaviour
         // Hanya raycast ke layer lantai. Tanpa lantai (mask 0) → posisi tidak valid,
         // sehingga furnitur tidak bisa ditempatkan sembarangan.
         if (floorLayerMask.value != 0
-            && Physics.Raycast(ray, out RaycastHit hit, 500f, floorLayerMask, QueryTriggerInteraction.Ignore))
+            && Physics.Raycast(ray, out RaycastHit hit, placementDistance, floorLayerMask, QueryTriggerInteraction.Ignore))
         {
             point = hit.point;
             return true;

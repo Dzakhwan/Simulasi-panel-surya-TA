@@ -23,7 +23,30 @@ public static class GameInput
 
     public static InputSystem_Actions.PlayerActions Player => Actions.Player;
 
-    public static Vector2 PointerPosition => Player.Point.ReadValue<Vector2>();
+    public static Vector2 PointerPosition
+    {
+        get
+        {
+            // 1. Prioritaskan Touchscreen jika ada sentuhan aktif (EnhancedTouch lebih andal di mobile)
+            if (UnityEngine.InputSystem.EnhancedTouch.Touch.activeTouches.Count > 0)
+            {
+                return UnityEngine.InputSystem.EnhancedTouch.Touch.activeTouches[0].screenPosition;
+            }
+
+            // 2. Fallback baca langsung dari hardware Touchscreen standard
+            if (Touchscreen.current != null && Touchscreen.current.touches.Count > 0 && Touchscreen.current.touches[0].isInProgress)
+            {
+                return Touchscreen.current.touches[0].position.ReadValue();
+            }
+
+            // 3. Fallback ke action (Mouse/Pen)
+            var pos = Player.Point.ReadValue<Vector2>();
+            if (pos == Vector2.zero)
+                pos = Player.Touch0Position.ReadValue<Vector2>();
+            
+            return pos;
+        }
+    }
 
     public static bool PrimaryPressed()
     {
