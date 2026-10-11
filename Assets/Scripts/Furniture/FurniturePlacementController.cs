@@ -205,8 +205,15 @@ public class FurniturePlacementController : MonoBehaviour
         if (_ghostValid)
         {
             _ghost.transform.position = floorPoint;
+
+            // Pusatkan ke tengah fisik objek (X & Z)
+            if (TryGetCenterOffsetXZ(_ghost, out Vector3 centerOffset))
+                _ghost.transform.position += centerOffset;
+
+            // Grounding (Y)
             if (TryGetLowestY(_ghost, out float lowY))
-                _ghost.transform.position = floorPoint + Vector3.up * (floorPoint.y - lowY);
+                _ghost.transform.position += Vector3.up * (floorPoint.y - lowY);
+
             _ghost.SetActive(true);
             SetGhostTint(true);
         }
@@ -287,8 +294,14 @@ public class FurniturePlacementController : MonoBehaviour
                 {
                     _ghost.SetActive(true);
                     _ghost.transform.position = floorPoint;
+
+                    // Pusatkan ke tengah fisik objek (X & Z)
+                    if (TryGetCenterOffsetXZ(_ghost, out Vector3 centerOffset))
+                        _ghost.transform.position += centerOffset;
+
+                    // Grounding (Y)
                     if (TryGetLowestY(_ghost, out float lowY))
-                        _ghost.transform.position = floorPoint + Vector3.up * (floorPoint.y - lowY);
+                        _ghost.transform.position += Vector3.up * (floorPoint.y - lowY);
 
                     // INVALID: ada bangunan/objek di antara kamera & titik lantai
                     Ray occRay = _cam.ScreenPointToRay(pointer);
@@ -411,6 +424,22 @@ public class FurniturePlacementController : MonoBehaviour
             bounds.Encapsulate(r.bounds);
 
         lowY = bounds.min.y;
+        return true;
+    }
+
+    private static bool TryGetCenterOffsetXZ(GameObject obj, out Vector3 offset)
+    {
+        offset = Vector3.zero;
+        Renderer[] renderers = obj.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length == 0) return false;
+
+        Bounds bounds = renderers[0].bounds;
+        foreach (Renderer r in renderers)
+            bounds.Encapsulate(r.bounds);
+
+        // Cari jarak dari transform asli ke titik tengah fisik (hanya X & Z)
+        Vector3 center = bounds.center;
+        offset = obj.transform.position - new Vector3(center.x, obj.transform.position.y, center.z);
         return true;
     }
 

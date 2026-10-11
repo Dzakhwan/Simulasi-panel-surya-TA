@@ -410,7 +410,6 @@ public class BatteryInstaller : MonoBehaviour
             if (_savedOrbitTarget != null)
                 _orbitCamera.target = _savedOrbitTarget;
 
-            _orbitCamera.distance     = _savedOrbitDistance;
             _orbitCamera.initialPitch = _savedOrbitPitch;
             _orbitCamera.initialYaw   = _savedOrbitYaw;
             _orbitCamera.targetOffset = _savedOrbitOffset;
@@ -418,9 +417,7 @@ public class BatteryInstaller : MonoBehaviour
             _orbitCamera.minVerticalAngle = _savedMinPitch;
             _orbitCamera.maxVerticalAngle = _savedMaxPitch;
 
-            SetOrbitField("yaw",       _savedOrbitYaw);
-            SetOrbitField("pitch",     _savedOrbitPitch);
-            SetOrbitField("panOffset", Vector3.zero);
+            _orbitCamera.RestoreOrbitView(_savedOrbitYaw, _savedOrbitPitch, _savedOrbitDistance);
 
             _orbitCamera.enabled = false;
         }
@@ -570,7 +567,6 @@ public class BatteryInstaller : MonoBehaviour
         if (_orbitCamera != null)
         {
             _orbitCamera.target       = _savedOrbitTarget;
-            _orbitCamera.distance     = _savedOrbitDistance;
             _orbitCamera.initialPitch = _savedOrbitPitch;
             _orbitCamera.initialYaw   = _savedOrbitYaw;
             _orbitCamera.targetOffset = _savedOrbitOffset;
@@ -579,9 +575,7 @@ public class BatteryInstaller : MonoBehaviour
             _orbitCamera.minVerticalAngle = _savedMinPitch;
             _orbitCamera.maxVerticalAngle = _savedMaxPitch;
 
-            SetOrbitField("yaw",       _savedOrbitYaw);
-            SetOrbitField("pitch",     _savedOrbitPitch);
-            SetOrbitField("panOffset", Vector3.zero);
+            _orbitCamera.RestoreOrbitView(_savedOrbitYaw, _savedOrbitPitch, _savedOrbitDistance);
 
             _orbitCamera.enabled = true;
         }
@@ -628,7 +622,6 @@ public class BatteryInstaller : MonoBehaviour
 
         // Gunakan target orbit yang sama seperti sebelum masuk mode baterai
         Transform orbitTarget = _savedOrbitTarget != null ? _savedOrbitTarget : _orbitCamera.target;
-        if (orbitTarget == null) return;
 
         // Ambil sudut dari posisi kamera sekarang (tepat di batteryCameraPoint setelah transisi)
         Vector3 euler = Camera.main.transform.eulerAngles;
@@ -641,20 +634,11 @@ public class BatteryInstaller : MonoBehaviour
         // Gunakan distance yang sama seperti sebelum masuk mode agar skala zoom tetap wajar
         float dist = _savedOrbitDistance > 0f ? _savedOrbitDistance : _orbitCamera.distance;
 
-        // Hitung panOffset supaya ApplyTransform() menempatkan kamera tepat di posisi saat ini
-        Quaternion rot       = Quaternion.Euler(pitch, yaw, 0f);
-        Vector3 targetOffset = _savedOrbitOffset;
-        Vector3 panOffset    = Camera.main.transform.position
-                               - (orbitTarget.position + targetOffset)
-                               + rot * Vector3.forward * dist;
-
         _orbitCamera.target       = orbitTarget;
-        _orbitCamera.distance     = dist;
-        _orbitCamera.targetOffset = targetOffset;
+        _orbitCamera.targetOffset = _savedOrbitOffset;
 
-        SetOrbitField("yaw",       yaw);
-        SetOrbitField("pitch",     pitch);
-        SetOrbitField("panOffset", panOffset);
+        // Letakkan kamera orbit tepat di posisi saat ini (world-space panOffset dihitung di dalam)
+        _orbitCamera.SetOrbitView(Camera.main.transform.position, yaw, pitch, dist);
 
         _orbitCamera.enabled = true;
     }
@@ -819,14 +803,6 @@ public class BatteryInstaller : MonoBehaviour
         Debug.Log($"[BatteryInstaller] Tipe baterai diubah menjadi {newBattType.battName}! Semua baterai terpasang telah di-update.");
     }
 
-
-    private void SetOrbitField(string fieldName, object value)
-    {
-        if (_orbitCamera == null) return;
-        FieldInfo fi = typeof(OrbitCamera).GetField(fieldName,
-            BindingFlags.NonPublic | BindingFlags.Instance);
-        fi?.SetValue(_orbitCamera, value);
-    }
 
     private void ShowUILeftBatt()
     {

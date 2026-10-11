@@ -8,8 +8,10 @@ public class TouchGestureController : MonoBehaviour
     public static TouchGestureController Instance { get; private set; }
 
     public static Vector2 DragDelta { get; private set; }
+    public static Vector2 TwoFingerDragDelta { get; private set; }
     public static float RotateDelta { get; private set; }
     public static float PinchDelta { get; private set; }
+    public static int ActiveTouchCount { get; private set; }
     public static bool TappedThisFrame { get; private set; }
 
     private const float TapMaxDistance = 20f;
@@ -36,11 +38,13 @@ public class TouchGestureController : MonoBehaviour
     void Update()
     {
         DragDelta = Vector2.zero;
+        TwoFingerDragDelta = Vector2.zero;
         RotateDelta = 0f;
         PinchDelta = 0f;
         TappedThisFrame = false;
 
         var touches = Touch.activeTouches;
+        ActiveTouchCount = touches.Count;
 
         if (touches.Count == 1)
         {
@@ -88,6 +92,7 @@ public class TouchGestureController : MonoBehaviour
 
             Vector2 prevMid = (prev0 + prev1) * 0.5f;
             Vector2 currMid = (t0.screenPosition + t1.screenPosition) * 0.5f;
+            TwoFingerDragDelta = currMid - prevMid;
 
             Vector2 prevDir = (prev1 - prev0).normalized;
             Vector2 currDir = (t1.screenPosition - t0.screenPosition).normalized;

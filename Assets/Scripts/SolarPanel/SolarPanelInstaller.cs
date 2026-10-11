@@ -430,18 +430,12 @@ public class SolarPanelInstaller : MonoBehaviour
         if (orbitCamera != null)
         {
             // Restore orbit camera ke state sebelum masuk roof mode.
-            // Tanpa ini, orbitCamera.target masih roofCameraPosition sehingga
-            // posisi kamera akan salah saat orbit di-enable kembali.
             if (savedOrbitTarget != null) orbitCamera.target = savedOrbitTarget;
-            orbitCamera.distance     = savedOrbitDistance;
             orbitCamera.targetOffset = savedOrbitOffset;
             orbitCamera.initialPitch = savedOrbitPitch;  // restore agar ResetToOrigin() pakai sudut home
             orbitCamera.initialYaw   = savedOrbitYaw;
 
-            var bi = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
-            typeof(OrbitCamera).GetField("yaw",       bi)?.SetValue(orbitCamera, savedOrbitYaw);
-            typeof(OrbitCamera).GetField("pitch",     bi)?.SetValue(orbitCamera, savedOrbitPitch);
-            typeof(OrbitCamera).GetField("panOffset", bi)?.SetValue(orbitCamera, Vector3.zero);
+            orbitCamera.RestoreOrbitView(savedOrbitYaw, savedOrbitPitch, savedOrbitDistance);
 
             // Biarkan orbit tetap disabled — caller (FurnitureInstaller) yang akan
             // menjalankan transisi kamera dan me-re-enable orbit setelah selesai.
@@ -633,26 +627,17 @@ public class SolarPanelInstaller : MonoBehaviour
         // ── Fase 3: Aktifkan orbit camera di mode atap ──
         if (orbitCamera != null && roofCameraPosition != null)
         {
-            // Buat target sementara di posisi atap
-            orbitCamera.target = roofCameraPosition;
-            orbitCamera.targetOffset = Vector3.zero;
-            orbitCamera.distance = 15f;
-            orbitCamera.initialPitch = 80f;  // Dari atas
-            orbitCamera.initialYaw = 0f;
+            // Buat kamera orbit fokus ke atap (pivot tetap HouseCenter)
+            orbitCamera.targetOffset  = Vector3.zero;
+            orbitCamera.distance      = 15f;
+            orbitCamera.initialPitch  = 80f;  // Dari atas
+            orbitCamera.initialYaw    = 0f;
             orbitCamera.minVerticalAngle = 10f;
             orbitCamera.maxVerticalAngle = 89f;
-            orbitCamera.minDistance = 5f;
-            orbitCamera.maxDistance = 40f;
+            orbitCamera.minDistance   = 5f;
+            orbitCamera.maxDistance   = 40f;
 
-            // Reset orbit camera state
-            // Panggil Start ulang via reflection atau set field langsung
-            var yawField = typeof(OrbitCamera).GetField("yaw", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var pitchField = typeof(OrbitCamera).GetField("pitch", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var panField = typeof(OrbitCamera).GetField("panOffset", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (yawField != null) yawField.SetValue(orbitCamera, 0f);
-            if (pitchField != null) pitchField.SetValue(orbitCamera, 80f);
-            if (panField != null) panField.SetValue(orbitCamera, Vector3.zero);
-
+            orbitCamera.SetRoofView(roofCameraPosition.position, 0f, 80f, 15f);
             orbitCamera.enabled = true;
         }
 
@@ -753,7 +738,6 @@ public class SolarPanelInstaller : MonoBehaviour
         // Aktifkan orbit camera di mode atap
         if (orbitCamera != null && roofCameraPosition != null)
         {
-            orbitCamera.target        = roofCameraPosition;
             orbitCamera.targetOffset  = Vector3.zero;
             orbitCamera.distance      = 15f;
             orbitCamera.initialPitch  = 80f;
@@ -763,13 +747,7 @@ public class SolarPanelInstaller : MonoBehaviour
             orbitCamera.minDistance   = 5f;
             orbitCamera.maxDistance   = 40f;
 
-            var yawField   = typeof(OrbitCamera).GetField("yaw",       System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var pitchField = typeof(OrbitCamera).GetField("pitch",     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var panField   = typeof(OrbitCamera).GetField("panOffset", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (yawField   != null) yawField.SetValue(orbitCamera, 0f);
-            if (pitchField != null) pitchField.SetValue(orbitCamera, 80f);
-            if (panField   != null) panField.SetValue(orbitCamera, Vector3.zero);
-
+            orbitCamera.SetRoofView(roofCameraPosition.position, 0f, 80f, 15f);
             orbitCamera.enabled = true;
         }
 
@@ -832,20 +810,12 @@ public class SolarPanelInstaller : MonoBehaviour
         {
             if (orbitCamera != null)
             {
-                orbitCamera.target = savedOrbitTarget;
-                orbitCamera.distance = savedOrbitDistance;
-                orbitCamera.initialPitch = savedOrbitPitch;
-                orbitCamera.initialYaw = savedOrbitYaw;
+                orbitCamera.target       = savedOrbitTarget;
                 orbitCamera.targetOffset = savedOrbitOffset;
+                orbitCamera.initialPitch = savedOrbitPitch;
+                orbitCamera.initialYaw   = savedOrbitYaw;
 
-                // Restore orbit state
-                var yawField = typeof(OrbitCamera).GetField("yaw", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                var pitchField = typeof(OrbitCamera).GetField("pitch", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                var panField = typeof(OrbitCamera).GetField("panOffset", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (yawField != null) yawField.SetValue(orbitCamera, savedOrbitYaw);
-                if (pitchField != null) pitchField.SetValue(orbitCamera, savedOrbitPitch);
-                if (panField != null) panField.SetValue(orbitCamera, Vector3.zero);
-
+                orbitCamera.RestoreOrbitView(savedOrbitYaw, savedOrbitPitch, savedOrbitDistance);
                 orbitCamera.enabled = true;
             }
 
