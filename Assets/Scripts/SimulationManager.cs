@@ -48,6 +48,7 @@ public class SimulationManager : MonoBehaviour
     private float _simulationEndHour = 0f;
     private float _elapsedSimHours = 0f;
     private bool _inResultsState = false;
+    private bool _lastPlacementActive = false;
     private SunController _sunController;
 
     void Awake()
@@ -179,6 +180,14 @@ public class SimulationManager : MonoBehaviour
 
     void Update()
     {
+        // Sembunyikan/tampilkan tombol Mulai Simulasi saat mode penempatan aktif
+        bool placing = IsAnyPlacementActive();
+        if (placing != _lastPlacementActive)
+        {
+            _lastPlacementActive = placing;
+            ApplyButtonState();
+        }
+
         if (!IsSimulationRunning) return;
         if (_sunController == null) return;
 
@@ -392,7 +401,19 @@ public class SimulationManager : MonoBehaviour
     private void ApplyButtonState()
     {
         if (simulationButton != null)
-            simulationButton.gameObject.SetActive(!IsSimulationRunning && !_inResultsState);
+            simulationButton.gameObject.SetActive(!IsSimulationRunning && !_inResultsState && !IsAnyPlacementActive());
+    }
+
+    /// <summary>True jika salah satu mode penempatan (furnitur/satelit/baterai) sedang aktif.</summary>
+    static bool IsAnyPlacementActive()
+    {
+        if (FurniturePlacementController.Instance != null && FurniturePlacementController.Instance.IsPlacing)
+            return true;
+        if (SolarPanelInstaller.Instance != null && SolarPanelInstaller.Instance.IsRoofMode)
+            return true;
+        if (BatteryInstaller.Instance != null && BatteryInstaller.Instance.IsInstallMode)
+            return true;
+        return false;
     }
 
     /// <summary>Kembali ke scene menu utama (scene index 0).</summary>

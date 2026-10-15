@@ -344,11 +344,11 @@ public class FurniturePlacementController : MonoBehaviour
         ui.transform.SetParent(canvas.transform, false);
 
         RectTransform rt = ui.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0.5f, 0.05f);
-        rt.anchorMax = new Vector2(0.5f, 0.05f);
+        rt.anchorMin = new Vector2(0.5f, 0.08f);
+        rt.anchorMax = new Vector2(0.5f, 0.08f);
         rt.pivot = new Vector2(0.5f, 0f);
         rt.anchoredPosition = Vector2.zero;
-        rt.sizeDelta = new Vector2(300f, 45f);
+        rt.sizeDelta = new Vector2(460f, 45f);
 
         var layout = ui.GetComponent<HorizontalLayoutGroup>();
         layout.spacing = 20f;
@@ -356,6 +356,7 @@ public class FurniturePlacementController : MonoBehaviour
         layout.childControlHeight = true;
         layout.childForceExpandWidth = true;
 
+        AddButton(ui.transform, "Rotasi", new Color(0.95f, 0.6f, 0.1f, 1f), () => RotateGhost(rotationStep));
         AddButton(ui.transform, "Batal (X)", deleteButtonColor, CancelPlacement);
         AddButton(ui.transform, "Pasang (V)", new Color(0.2f, 0.7f, 0.3f, 1f), CommitPlacement);
 
@@ -613,6 +614,14 @@ public class FurniturePlacementController : MonoBehaviour
         rowLayout.childControlHeight = true;
         rowLayout.childForceExpandWidth = true;
         rowLayout.childForceExpandHeight = false;
+
+        bool isConnected = CableManager.Instance != null && CableManager.Instance.IsConnected(instance);
+        AddButton(row.transform, isConnected ? "Putus Kabel" : "Sambung Kabel",
+            new Color(0.15f, 0.6f, 0.7f, 1f), () =>
+            {
+                CableManager.Instance?.ToggleConnect(instance, data);
+                CancelSelection();
+            });
 
         AddButton(row.transform, "Atur Jam", configButtonColor, () =>
         {

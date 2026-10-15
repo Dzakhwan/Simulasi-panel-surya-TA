@@ -16,6 +16,12 @@ public class FurniturePowered : MonoBehaviour
     [Tooltip("Warna tint icon.")]
     [SerializeField] private Color iconColor = new Color(1f, 0.85f, 0.05f, 1f);
 
+    [Header("Unconnected (Belum Tersambung Kabel)")]
+    [Tooltip("Sprite yang tampil saat furnitur BELUM tersambung kabel. Kosong = pakai iconSprite dengan warna merah.")]
+    [SerializeField] private Sprite unconnectedIconSprite;
+    [Tooltip("Warna ikon saat belum tersambung kabel.")]
+    [SerializeField] private Color unconnectedColor = new Color(0.85f, 0.25f, 0.25f, 1f);
+
     [Tooltip("Ukuran icon dalam world units.")]
     [SerializeField] private float iconSize = 40f;
 
@@ -24,7 +30,14 @@ public class FurniturePowered : MonoBehaviour
 
     // ── Runtime ────────────────────────────────────────────────────────────
     private GameObject _iconRoot;
+    private Image _iconImage;
     private bool _isPowered = false;
+
+    /// <summary>
+    /// Apakah furnitur ini sudah tersambung kabel dari inverter.
+    /// Default false — barang baru dipasang harus disambung dulu.
+    /// </summary>
+    private bool _isConnected = false;
 
     /// <summary>
     /// Apakah furnitur ini sedang aktif (dalam jam pakainya).
@@ -63,7 +76,9 @@ public class FurniturePowered : MonoBehaviour
     {
         // Auto-load sprite jika belum di-assign di Inspector
         if (iconSprite == null)
-            iconSprite = LoadSpriteFromAssets();
+            iconSprite = LoadSpriteFromAssets("Assets/_Images/Electricity.png");
+        if (unconnectedIconSprite == null)
+            unconnectedIconSprite = LoadSpriteFromAssets("Assets/_Images/PlugOff.png");
 
         StartCoroutine(InitIconAfterAnimation());
     }
@@ -102,11 +117,21 @@ public class FurniturePowered : MonoBehaviour
             iconSprite = sprite;
     }
 
-    /// <summary>Dipanggil oleh BatteryManager saat state daya berubah.</summary>
+    /// <summary>
+    /// Dipanggil oleh BatteryManager saat state daya berubah.
+    /// </summary>
     public void SetPowered(bool powered)
     {
         if (_isPowered == powered) return;
         _isPowered = powered;
+        RefreshIconVisibility();
+    }
+
+    /// <summary>Atur status sambungan kabel. Belum tersambung = ikon merah (plug-off).</summary>
+    public void SetConnected(bool connected)
+    {
+        if (_isConnected == connected) return;
+        _isConnected = connected;
         RefreshIconVisibility();
     }
 
@@ -146,6 +171,9 @@ public class FurniturePowered : MonoBehaviour
         canvas.worldCamera = Camera.main;
         canvas.sortingOrder = 10;
 
+        // Supaya tombol ikon bisa diklik via EventSystem
+        _iconRoot.AddComponent<GraphicRaycaster>();
+
         RectTransform canvasRect = _iconRoot.GetComponent<RectTransform>();
         canvasRect.sizeDelta = new Vector2(iconSize, iconSize);
 
@@ -157,13 +185,31 @@ public class FurniturePowered : MonoBehaviour
         img.sprite = iconSprite;
         img.color = iconColor;
         img.preserveAspect = true;
-        img.raycastTarget = false;
+        img.raycastTarget = true;
+        _iconImage = img;
+
+        // Klik ikon → sambung/putus kabel
+        Button btn = imgObj.AddComponent<Button>();
+        btn.targetGraphic = img;
+        btn.transition = Selectable.Transition.None;
+        btn.onClick.AddListener(OnIconClicked);
 
         RectTransform imgRect = imgObj.GetComponent<RectTransform>();
         imgRect.anchorMin = Vector2.zero;
         imgRect.anchorMax = Vector2.one;
         imgRect.offsetMin = Vector2.zero;
         imgRect.offsetMax = Vector2.zero;
+    }
+
+    /// <summary>Klik logo → toggle sambungan kabel (via CableManager).</summary>
+    public void OnIconClicked()
+    {
+        if (CableManager.Instance == null) return;
+        if (FurnitureManager.Instance != null &&
+            FurnitureManager.Instance.TryGetDataOf(gameObject, out var data))
+        {
+            CableManager.Instance.ToggleConnect(gameObject, data);
+        }
     }
 
     private Vector3 CalculateIconWorldPosition()
@@ -186,16 +232,36 @@ public class FurniturePowered : MonoBehaviour
             _iconRoot.SetActive(visible);
     }
 
-    /// <summary>Icon muncul hanya jika baterai ada daya DAN furnitur sedang aktif.</summary>
+    /// Icon tampil sesuai state sambungan:
+    ///  - Belum tersambung → SELALU tampil (merah/plug-off), abaikan baterai.
+    ///  - Tersambung → ikut baterai (kuning saat berdaya) & jam aktif.
     private void RefreshIconVisibility()
     {
+        if (_iconRoot == null) return;
+
+        if (!_isConnected)
+        {
+            if (_iconImage != null)
+            {
+                _iconImage.sprite = unconnectedIconSprite != null ? unconnectedIconSprite : iconSprite;
+                _iconImage.color = unconnectedColor;
+            }
+            SetIconVisible(true);
+            return;
+        }
+
+        if (_iconImage != null)
+        {
+            _iconImage.sprite = iconSprite;
+            _iconImage.color = iconColor;
+        }
         SetIconVisible(_isPowered && _isFurnitureActive);
     }
 
-    private Sprite LoadSpriteFromAssets()
+    private Sprite LoadSpriteFromAssets(string path)
     {
 #if UNITY_EDITOR
-        return UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Images/Electricity.png");
+        return UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(path);
 #else
         return null;
 #endif

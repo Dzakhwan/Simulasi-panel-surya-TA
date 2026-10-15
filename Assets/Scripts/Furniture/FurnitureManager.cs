@@ -32,6 +32,9 @@ public class FurnitureManager : MonoBehaviour
     // Mapping instance → data asalnya.
     private readonly Dictionary<GameObject, FurnitureData> _instanceData = new();
 
+    // Instance yang sudah tersambung kabel dari inverter (menentukan daya masuk).
+    private readonly HashSet<GameObject> _connected = new();
+
     // Key: FurnitureData, Value: (jam mulai, jam selesai) dalam format 0-24.
     // Jadwal bersifat SHARED per jenis (berlaku untuk semua instance tipe sama).
     private readonly Dictionary<FurnitureData, (float startHour, float endHour)> _usageHours = new();
@@ -122,6 +125,24 @@ public class FurnitureManager : MonoBehaviour
     public bool TryGetDataOf(GameObject instance, out FurnitureData data)
     {
         return _instanceData.TryGetValue(instance, out data);
+    }
+
+    /// <summary>Cek apakah sebuah instance sudah tersambung kabel dari inverter.</summary>
+    public bool IsConnected(GameObject instance)
+    {
+        return instance != null && _connected.Contains(instance);
+    }
+
+    /// <summary>Atur status sambungan kabel sebuah instance (memengaruhi daya yang ditarik).</summary>
+    public void SetConnected(GameObject instance, bool connected)
+    {
+        if (instance == null) return;
+
+        if (connected) _connected.Add(instance);
+        else           _connected.Remove(instance);
+
+        var fp = instance.GetComponent<FurniturePowered>();
+        if (fp != null) fp.SetConnected(connected);
     }
 
     /// <summary>
@@ -222,6 +243,12 @@ public class FurnitureManager : MonoBehaviour
 
         _instances.Remove(instance);
         _instanceData.Remove(instance);
+        _connected.Remove(instance);
+
+        // Kabel terkait ikut dihapus sebelum objek dihancurkan
+        if (CableManager.Instance != null)
+            CableManager.Instance.Disconnect(instance);
+
         Destroy(instance);
 
         TotalWattConsumed -= data.wattConsumption;
@@ -287,6 +314,10 @@ public class FurnitureManager : MonoBehaviour
         foreach (var instance in _instances)
         {
             if (instance == null || !_instanceData.TryGetValue(instance, out var data))
+                continue;
+
+            // Belum tersambung kabel → tidak menarik daya
+            if (!_connected.Contains(instance))
                 continue;
 
             var (start, end) = GetUsageHours(data);

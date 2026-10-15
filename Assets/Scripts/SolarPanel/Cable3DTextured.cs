@@ -77,6 +77,22 @@ public class Cable3DTextured : MonoBehaviour
     // Lifecycle
     // =========================================================
 
+    /// <summary>Konfigurasi kabel dari luar (dipakai CableManager untuk kabel runtime).</summary>
+    public void ConfigureCable(SolarPanel panel, GameObject linkedPrefab,
+        int count, float speed, float eRadius, float cRadius, Material mat,
+        bool smooth = true)
+    {
+        useBatteryManager = true;
+        solarPanel         = panel;
+        linkedFurniturePrefab = linkedPrefab;
+        electronCount      = count;
+        electronSpeed      = speed;
+        electronRadius     = eRadius;
+        cableRadius        = cRadius;
+        cableMaterial      = mat;
+        smoothBend         = smooth;
+    }
+
     void Start()
     {
         // Auto-collect child Transforms sebagai waypoints jika array kosong
