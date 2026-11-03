@@ -3,16 +3,17 @@ using UnityEngine;
 
 /// <summary>
 /// Mengelola kabel runtime yang menghubungkan inverter → furnitur (elektronik).
-/// Kabel dibuat OTOMATIS (auto-route) — tidak perlu penempatan manual.
-/// Mendukung BANYAK inverter: kabel dirutekan ke inverter terdekat dari furnitur.
+/// Kabel dibuat OTOMATIS (auto-route menyusuri lantai) — tidak perlu penempatan manual.
+/// Mendukung BANYAK inverter: kabel dirutekan ke inverter terdekat dari furnitur
+/// (atau ke inverter eksplisit yang dipilih pengguna).
 /// </summary>
 public class CableManager : MonoBehaviour
 {
     public static CableManager Instance { get; private set; }
 
     [Header("Inverter")]
-    [Tooltip("Kosongkan agar auto-detect semua GameObject bernama mengandung 'Inverter'.")
-    ] [SerializeField] private List<Transform> inverterAnchors = new();
+    [Tooltip("Kosongkan agar auto-detect semua GameObject bernama mengandung 'Inverter'.")]
+    [SerializeField] private List<Transform> inverterAnchors = new();
 
     [Header("Cable Visual")]
     [SerializeField] private float cableRadius = 3f;
@@ -20,23 +21,39 @@ public class CableManager : MonoBehaviour
     [SerializeField] private float cableFanOut = 25f;
 
     [Header("Routing")]
-    [Tooltip("Wall = kabel menyusuri dinding (butuh collider layer 'Wall'); Arc = melengkung di udara (lama).")]
-    [SerializeField] private RoutingMode routingMode = RoutingMode.Wall;
+    [Tooltip("Dijkstra = rute mengikuti graf waypoint manual (direkomendasikan). FloorAStar = voxel lantai A*. Arc = melengkung udara.")]
+    [SerializeField] private RoutingMode routingMode = RoutingMode.Dijkstra;
+
+    [Header("Waypoint Graph (Dijkstra)")]
+    [Tooltip("Graf waypoint manual. Jika kosong, akan otomatis dicari di scene.")]
+    [SerializeField] private CableWaypointGraph waypointGraph;
+    [Tooltip("Radius maksimal pencarian simpul graf terdekat dari port colokan/inverter.")]
+    [SerializeField] private float maxWaypointSnapDistance = 500f;
+    [Tooltip("Penalti biaya sambungan mentah port→waypoint. Semakin besar, semakin Dijkstra dipaksa mengikuti chain waypoint manual Invoice (nilai >= 1, default 3).")]
+    [Min(1f)]
+    [SerializeField] private float endpointConnectorCostScale = 3f;
+    [Tooltip("Aktifkan Catmull-Rom spline halus. Nonaktifkan jika ingin segmen lurus/siku-siku tajam.")]
+    [SerializeField] private bool smoothCableCurves = true;
+
+    [Header("Routing Grid A* (Fallback)")]
     [SerializeField] private float cellSize = 4f;
-    [Tooltip("Tinggi kabel di atas lantai saat menempel dinding.")]
-    [SerializeField] private float baseboardHeight = 8f;
+    [Tooltip("Ketinggian kabel di atas lantai (clearance).")]
+    [SerializeField] private float floorClearance = 2f;
     [Range(0f, 0.5f)]
-    [SerializeField] private float edgeBias = 0.25f;
+    [Tooltip("Semakin besar, semakin kabel cenderung menyusuri tepi/dinding.")]
+    [SerializeField] private float edgeBias = 0.35f;
     [Tooltip("Toleransi ketinggian lantai agar kabel tidak pindah lantai di tengah rute.")]
     [SerializeField] private float floorBandThreshold = 40f;
+    [Tooltip("Batas maksimum pencarian sel lantai terdekat dari port (dalam sel).")]
+    [SerializeField] private int maxSnapCells = 200;
 
     [Header("Layer")]
     [Tooltip("Kosongkan agar otomatis memakai layer 'Floor'.")]
     [SerializeField] private LayerMask floorMask = 0;
-    [Tooltip("Kosongkan agar otomatis memakai layer 'Wall'.")]
-    [SerializeField] private LayerMask wallMask = 0;
+    [Tooltip("Penghalang rute (dinding). Kosongkan agar otomatis memakai SEMUA layer kecuali 'Floor'.")]
+    [SerializeField] private LayerMask obstacleMask = 0;
 
-    private enum RoutingMode { Wall, Arc }
+    public enum RoutingMode { Dijkstra, FloorAStar, Arc }
 
     [Header("Elektron")]
     [SerializeField] private int electronCount = 15;
@@ -55,6 +72,16 @@ public class CableManager : MonoBehaviour
     private Transform _systemRoot;
     private Transform[] _resolvedAnchors = System.Array.Empty<Transform>();
 
+    /// <summary>Semua anchor inverter yang terdeteksi (transform child 'CableAnchor').</summary>
+    public IReadOnlyList<Transform> Inverters
+    {
+        get
+        {
+            if (_resolvedAnchors.Length == 0) _resolvedAnchors = ResolveInverterAnchors();
+            return _resolvedAnchors;
+        }
+    }
+
     void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
@@ -65,8 +92,8 @@ public class CableManager : MonoBehaviour
     {
         if (floorMask.value == 0)
             floorMask = LayerMask.GetMask("Floor");
-        if (wallMask.value == 0)
-            wallMask = LayerMask.GetMask("Wall");
+        if (obstacleMask.value == 0)
+            obstacleMask = BuildAutoObstacleMask();
 
         if (deactivateLegacyCables)
         {
@@ -74,10 +101,15 @@ public class CableManager : MonoBehaviour
             if (legacy != null) legacy.SetActive(false);
         }
 
+        if (waypointGraph == null)
+            waypointGraph = FindFirstObjectByType<CableWaypointGraph>();
+
         _systemRoot = new GameObject("[CableSystem]").transform;
         _resolvedAnchors = ResolveInverterAnchors();
         if (_resolvedAnchors.Length == 0)
             Debug.LogWarning("[CableManager] Tidak ada inverter ditemukan. Buat GO bernama 'Inverter' atau isi daftar manual.");
+
+        CleanupOrphanShells();
     }
 
     void Update()
@@ -109,7 +141,14 @@ public class CableManager : MonoBehaviour
         return Connect(instance, data);
     }
 
+    /// <summary>Sambung ke inverter terdekat (auto).</summary>
     public bool Connect(GameObject instance, FurnitureData data)
+    {
+        return ConnectTo(instance, data, null);
+    }
+
+    /// <summary>Sambung instance ke inverter tertentu (eksplisit). inverter null = auto terdekat.</summary>
+    public bool ConnectTo(GameObject instance, FurnitureData data, Transform inverter)
     {
         if (instance == null || data == null || data.prefab3D == null) return false;
         if (_cables.ContainsKey(instance)) return true;
@@ -123,12 +162,30 @@ public class CableManager : MonoBehaviour
             return false;
         }
 
-        Transform inverter = PickInverter(instance.transform.position);
+        if (inverter == null || System.Array.IndexOf(_resolvedAnchors, inverter) < 0)
+        {
+            inverter = PickInverter(instance.transform.position);
+        }
+        else
+        {
+            _anchorLoad.TryGetValue(inverter, out int l);
+            _anchorLoad[inverter] = l + 1;
+        }
+
+        CleanupOrphanShells();
+
         GameObject cable = BuildCable(instance, data, inverter);
+        if (cable == null)
+        {
+            Debug.LogWarning($"[CableManager] Tidak dapat menyambungkan {data.furnitureName}: rute kabel valid tidak ditemukan.");
+            return false;
+        }
 
         _cables[instance] = cable;
         FurnitureManager.Instance?.SetConnected(instance, true);
-        Debug.Log($"[CableManager] {data.furnitureName} tersambung ke {inverter.name}.");
+
+        string invName = inverter.parent != null ? inverter.parent.name : inverter.name;
+        Debug.Log($"[CableManager] {data.furnitureName} tersambung ke {invName}.");
         return true;
     }
 
@@ -147,6 +204,16 @@ public class CableManager : MonoBehaviour
     }
 
     // ── Internal ────────────────────────────────────────────────────────────
+
+    private static int BuildAutoObstacleMask()
+    {
+        int mask = ~0;
+        int floor = LayerMask.NameToLayer("Floor");
+        int ignore = LayerMask.NameToLayer("Ignore Raycast");
+        if (floor >= 0)  mask &= ~(1 << floor);
+        if (ignore >= 0) mask &= ~(1 << ignore);
+        return mask;
+    }
 
     private Transform[] ResolveInverterAnchors()
     {
@@ -212,28 +279,61 @@ public class CableManager : MonoBehaviour
         GameObject cable = new GameObject($"Cable_{data.furnitureName}_{instance.GetInstanceID()}");
         cable.transform.SetParent(_systemRoot, false);
 
-        Vector3 start = inverter.position;
-        Vector3 end = ComputeFurnitureNode(instance);
+        // Titik koneksi eksplisit (port)
+        Transform invRoot = inverter.parent != null ? inverter.parent : inverter;
+        Vector3 applianceCenter = GetBounds(instance).center;
+        Vector3 startPort = CablePort.Resolve(invRoot.gameObject, PortRole.Output, applianceCenter);
+        Vector3 endPort = CablePort.Resolve(instance, PortRole.Input, startPort);
 
-        // Mode Wall: coba rute menyusuri dinding (A* di grid lantai)
-        List<Vector3> wallPath = null;
-        if (routingMode == RoutingMode.Wall)
+        // Resolusi rute kabel sesuai routingMode
+        List<Vector3> path = null;
+        if (routingMode == RoutingMode.Dijkstra)
         {
-            wallPath = CableRouter.Route(start, end, floorMask, wallMask,
-                cellSize, baseboardHeight, edgeBias, floorBandThreshold);
+            if (waypointGraph == null)
+                waypointGraph = FindFirstObjectByType<CableWaypointGraph>();
+
+            if (waypointGraph != null)
+            {
+                path = CablePathfinder.FindRoute(startPort, endPort, waypointGraph, obstacleMask,
+                    maxWaypointSnapDistance, invRoot, instance.transform, endpointConnectorCostScale);
+            }
+            else
+            {
+                Debug.LogWarning("[CableManager] RoutingMode = Dijkstra namun tidak ada CableWaypointGraph di scene! Fallback ke FloorAStar.");
+                path = CableRouter.Route(startPort, endPort, floorMask, obstacleMask,
+                    cellSize, floorClearance, edgeBias, floorBandThreshold, maxSnapCells);
+            }
+        }
+        else if (routingMode == RoutingMode.FloorAStar)
+        {
+            path = CableRouter.Route(startPort, endPort, floorMask, obstacleMask,
+                cellSize, floorClearance, edgeBias, floorBandThreshold, maxSnapCells);
         }
 
-        if (wallPath != null && wallPath.Count > 1)
+        // Sambungan ujung dibentuk pola L (turun/bangkit vertikal) agar kabel mengikuti
+        // dinding seperti kabel legacy — tidak melayang diagonal menembus udara.
+        if (path != null && path.Count > 1)
+            path = RefineEndpointConnectors(path, startPort, endPort, invRoot, instance.transform, obstacleMask);
+
+        if (path != null && path.Count > 1)
         {
-            for (int i = 0; i < wallPath.Count; i++)
-                MakeWaypoint(cable.transform, $"WP_{i:00}", wallPath[i]);
-            Debug.Log($"[CableManager] Wall route OK: {wallPath.Count} titik ({data.furnitureName}).");
+            for (int i = 0; i < path.Count; i++)
+                MakeWaypoint(cable.transform, $"WP_{i:00}", path[i]);
+            Debug.Log($"[CableManager] {routingMode} route OK: {path.Count} titik ({data.furnitureName}).");
         }
         else
         {
-            // Fallback: arc lama (melengkung di udara)
+            // Jika Dijkstra gagal, jangan buat kabel sembarangan menembus dinding (fail safe)!
+            if (routingMode == RoutingMode.Dijkstra)
+            {
+                Debug.LogError($"[CableManager] Dijkstra gagal: Tidak ada jalur waypoint yang menghubungkan inverter ke {data.furnitureName}. Kabel dibatalkan.");
+                Destroy(cable);
+                return null;
+            }
+
+            // Fallback: arc melengkung di udara
             int idx = _cables.Count;
-            Vector3 dir = (end - start);
+            Vector3 dir = (endPort - startPort);
             dir.y = 0f;
             Vector3 lateral = dir.sqrMagnitude > 0.001f
                 ? Vector3.Cross(Vector3.up, dir.normalized)
@@ -241,24 +341,88 @@ public class CableManager : MonoBehaviour
             lateral = lateral.normalized;
             float sign = (idx % 2 == 0) ? 1f : -1f;
 
-            Vector3 mid = (start + end) * 0.5f;
-            mid.y = Mathf.Max(start.y, end.y) + cableSag;
+            Vector3 mid = (startPort + endPort) * 0.5f;
+            mid.y = Mathf.Max(startPort.y, endPort.y) + cableSag;
             mid += lateral * sign * (cableFanOut * (1f + idx / 2f));
 
-            MakeWaypoint(cable.transform, "WP_inv", start);
+            MakeWaypoint(cable.transform, "WP_inv", startPort);
             MakeWaypoint(cable.transform, "WP_mid", mid);
-            MakeWaypoint(cable.transform, "WP_fur", end);
+            MakeWaypoint(cable.transform, "WP_fur", endPort);
 
-            if (routingMode == RoutingMode.Wall)
-                Debug.Log("[CableManager] Rute dinding tidak ditemukan — fallback ke arc.");
+            Debug.Log("[CableManager] Menggunakan fallback Arc.");
         }
 
         var c3d = cable.AddComponent<Cable3DTextured>();
         c3d.ConfigureCable(null, data.prefab3D,
             electronCount, electronSpeed, electronRadius, cableRadius, null,
-            smooth: false);
+            smooth: smoothCableCurves);
 
         return cable;
+    }
+
+    /// <summary>
+    /// Mengganti sambungan lurus port→waypoint dengan pola L (mengikuti gaya kabel legacy):
+    /// sisi inverter  : startPort → (vertikal ke ketinggian WP) → WP
+    /// sisi peralatan : WP → (horizontal di ketinggian WP di atas port) → (vertikal turun ke port)
+    /// Tiap sub-segmen wajib lolos LOS; bila terblokir, segmen lurus semula dipertahankan.
+    /// </summary>
+    private static List<Vector3> RefineEndpointConnectors(
+        List<Vector3> route, Vector3 startPort, Vector3 endPort,
+        Transform startSource, Transform endSource, LayerMask mask)
+    {
+        var result = new List<Vector3>(route);
+
+        // Sisi inverter
+        if (result.Count >= 3)
+        {
+            Vector3 wp = result[1];
+            if (Mathf.Abs(startPort.y - wp.y) > 0.5f)
+            {
+                Vector3 elbow = new Vector3(startPort.x, wp.y, startPort.z);
+                if ((elbow - wp).sqrMagnitude > 0.25f && (elbow - startPort).sqrMagnitude > 0.25f &&
+                    CablePathfinder.LinecastFree(startPort, elbow, mask, startSource) &&
+                    CablePathfinder.LinecastFree(elbow, wp, mask, startSource))
+                {
+                    result.Insert(1, elbow);
+                }
+            }
+        }
+
+        // Sisi peralatan
+        if (result.Count >= 3)
+        {
+            int last = result.Count - 1;
+            Vector3 wpLast = result[last - 1];
+            if (Mathf.Abs(endPort.y - wpLast.y) > 0.5f)
+            {
+                Vector3 elbowEnd = new Vector3(endPort.x, wpLast.y, endPort.z);
+                if ((elbowEnd - wpLast).sqrMagnitude > 0.25f && (elbowEnd - endPort).sqrMagnitude > 0.25f &&
+                    CablePathfinder.LinecastFree(wpLast, elbowEnd, mask, endSource) &&
+                    CablePathfinder.LinecastFree(elbowEnd, endPort, mask, endSource))
+                {
+                    result.Insert(last, elbowEnd);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Hapus GO kabel yatim dari percobaan koneksi yang gagal (shell tanpa Cable3DTextured).
+    /// </summary>
+    private void CleanupOrphanShells()
+    {
+        if (_systemRoot == null) return;
+        for (int i = _systemRoot.childCount - 1; i >= 0; i--)
+        {
+            var child = _systemRoot.GetChild(i);
+            if (child.GetComponent<Cable3DTextured>() == null)
+            {
+                Debug.LogWarning($"[CableManager] Membersihkan shell kabel yatim '{child.name}'.");
+                Destroy(child.gameObject);
+            }
+        }
     }
 
     private Transform MakeWaypoint(Transform parent, string name, Vector3 pos)
@@ -267,17 +431,6 @@ public class CableManager : MonoBehaviour
         go.transform.SetParent(parent, false);
         go.transform.position = pos;
         return go.transform;
-    }
-
-    private Vector3 ComputeFurnitureNode(GameObject instance)
-    {
-        Renderer[] rends = instance.GetComponentsInChildren<Renderer>(true);
-        if (rends.Length == 0)
-            return instance.transform.position + Vector3.up * 2f;
-
-        Bounds b = rends[0].bounds;
-        foreach (Renderer r in rends) b.Encapsulate(r.bounds);
-        return new Vector3(b.center.x, b.max.y + 2f, b.center.z) + Vector3.forward * 1f;
     }
 
     private static Bounds GetBounds(GameObject root)

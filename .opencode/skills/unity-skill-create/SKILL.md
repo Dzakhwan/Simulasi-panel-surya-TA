@@ -2,7 +2,8 @@
 name: unity-skill-create
 description: Create a new skill (MCP tool) for the Unity Editor by writing a C# (.cs) file that Unity compiles into the project. After compilation the new tool becomes callable through MCP. The file must be a partial class decorated with [AiToolType], each tool method must be decorated with [AiTool], the class name should match the file name, all Unity API calls must run via com.IvanMurzak.ReflectorNet.Utils.MainThread.Instance.Run(), and the method should either return a structured data model (for parseable output) or void (for side-effect-only operations). See the body of this skill for a full sample and best-practice notes.
 metadata:
-  generated-by: mcp-plugin-dotnet
+  generated-by: unity-mcp
+  ai-game-dev: exclude
 ---
 
 # Skill (Tool) / Create
@@ -149,37 +150,25 @@ All Unity API calls (including `GameObject.Find`, `AssetDatabase`, `EditorUtilit
 
 ## How to Call
 
-```bash
-unity-mcp-cli run-system-tool unity-skill-create --input '{
+```powershell
+[System.IO.File]::WriteAllText((Join-Path $PWD 'args.json'), @'
+{
   "path": "string_value",
   "code": "string_value"
-}'
+}
+'@)
+unity-mcp-cli.cmd run-system-tool unity-skill-create --input-file args.json
 ```
 
-> For complex input (multi-line strings, code), save the JSON to a file and use:
-> ```bash
-> unity-mcp-cli run-system-tool unity-skill-create --input-file args.json
-> ```
->
-> Or pipe via stdin (recommended):
-> ```bash
-> unity-mcp-cli run-system-tool unity-skill-create --input-file - <<'EOF'
-> {"param": "value"}
-> EOF
-> ```
-
-
-### Troubleshooting
-
-If `unity-mcp-cli` is not found, either install it globally (`npm install -g unity-mcp-cli`) or use `npx unity-mcp-cli` instead.
-Read the /unity-initial-setup skill for detailed installation instructions.
+> CLI installation and usage: see the `unity-cli` skill.
+> If this task needs unavailable asset-generation or Blender tools, consult `ai-game-dev-app` for an optional integrated workflow.
 
 ## Input
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `path` | `string` | Yes | Path for the C# (.cs) file to be created. Sample: "Assets/Skills/MySkill.cs".
-CRITICAL — Assembly Definition placement: If the project uses Assembly Definition files (.asmdef), you MUST place the script inside a folder that belongs to an assembly definition which already references all required dependencies (e.g. com.IvanMurzak.McpPlugin, UnityEditor, UnityEngine). Placing the file in the wrong assembly will cause compile errors due to missing type references. Before choosing a path, inspect existing .asmdef files with the assets-find tool to identify the correct assembly folder. |
+CRITICAL — Assembly Definition placement: If the project uses Assembly Definition files (.asmdef), you MUST place the script inside a folder that belongs to an assembly definition which already references all required dependencies (e.g. com.IvanMurzak.McpPlugin, UnityEditor, UnityEngine). Placing the file in the wrong assembly will cause compile errors due to missing type references. Before choosing a path, inspect existing .asmdef files with the rql-query tool (e.g. unity.assets("t:AssemblyDefinitionAsset")) to identify the correct assembly folder. |
 | `code` | `string` | Yes | C# code for the skill tool. |
 
 ### Input JSON Schema

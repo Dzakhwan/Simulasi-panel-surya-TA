@@ -171,9 +171,6 @@ public class FurniturePowered : MonoBehaviour
         canvas.worldCamera = Camera.main;
         canvas.sortingOrder = 10;
 
-        // Supaya tombol ikon bisa diklik via EventSystem
-        _iconRoot.AddComponent<GraphicRaycaster>();
-
         RectTransform canvasRect = _iconRoot.GetComponent<RectTransform>();
         canvasRect.sizeDelta = new Vector2(iconSize, iconSize);
 
@@ -185,14 +182,8 @@ public class FurniturePowered : MonoBehaviour
         img.sprite = iconSprite;
         img.color = iconColor;
         img.preserveAspect = true;
-        img.raycastTarget = true;
+        img.raycastTarget = false; // logo hanya indikator; sambung kabel via ketuk inverter
         _iconImage = img;
-
-        // Klik ikon → sambung/putus kabel
-        Button btn = imgObj.AddComponent<Button>();
-        btn.targetGraphic = img;
-        btn.transition = Selectable.Transition.None;
-        btn.onClick.AddListener(OnIconClicked);
 
         RectTransform imgRect = imgObj.GetComponent<RectTransform>();
         imgRect.anchorMin = Vector2.zero;
@@ -201,7 +192,7 @@ public class FurniturePowered : MonoBehaviour
         imgRect.offsetMax = Vector2.zero;
     }
 
-    /// <summary>Klik logo → toggle sambungan kabel (via CableManager).</summary>
+    /// <summary>Klik logo — tidak lagi dipakai (koneksi via CableConnectController).</summary>
     public void OnIconClicked()
     {
         if (CableManager.Instance == null) return;

@@ -405,7 +405,7 @@ public class SimulationManager : MonoBehaviour
     }
 
     /// <summary>True jika salah satu mode penempatan (furnitur/satelit/baterai) sedang aktif.</summary>
-    static bool IsAnyPlacementActive()
+    public static bool IsAnyPlacementActive()
     {
         if (FurniturePlacementController.Instance != null && FurniturePlacementController.Instance.IsPlacing)
             return true;

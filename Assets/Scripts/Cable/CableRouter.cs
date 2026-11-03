@@ -2,60 +2,72 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Menghitung rute kabel yang "menempel dinding" pada ketinggian baseboard.
-/// Menggunakan A* di grid lantai (layer Floor) dengan collider layer 'Wall' sebagai
-/// penghalang. Sel yang bersebelahan dinding diberi cost lebih murah (edge-bias)
-/// sehingga kabel menyusuri sepanjang dinding dari sisi dalam ruangan.
+/// Menghitung rute kabel yang berjalan DI ATAS LANTAI (sedikit diangkat) dari port
+/// inverter ke port alat elektronik. Menggunakan A* di grid lantai (layer Floor),
+/// dengan collider penghalang (mis. dinding rumah) sebagai sel terblok.
+/// Sel yang bersebelahan penghalang diberi cost lebih murah (edge-bias) sehingga
+/// kabel cenderung menyusuri tepi ruangan/dinding, tetapi boleh melintasi lantai.
 /// Grid di-cache per scene; A* berjalan setiap kali rute diminta.
 /// </summary>
 public static class CableRouter
 {
     private static string _cachedScene;
-    private static Bounds _bounds;
     private static float _cell;
+    private static int _cachedFloorMask = -1;
+    private static int _cachedObstacleMask = -1;
+    private static Bounds _bounds;
     private static int _width, _depth;
     private static bool[] _hasFloor;
     private static float[] _floorY;
-    private static bool[] _wallBlocked;
+    private static bool[] _blocked;
 
     /// <summary>
-    /// Rute kabel dari start → end (termasuk start & end), atau null bila tidak ada jalur.
-    /// Titik interior berada di y = floorY + baseboardHeight.
+    /// Rute kabel dari startPort → endPort (termasuk kedua port), atau null bila tak ada jalur.
+    /// Titik interior berada di y = floorY + pathHeight. Ditambahkan drop vertikal di ujung
+    /// agar kabel turun/naik tegak lurus, bukan diagonal panjang.
     /// </summary>
-    public static List<Vector3> Route(Vector3 start, Vector3 end,
-        LayerMask floorMask, LayerMask wallMask,
-        float cellSize, float baseboardHeight, float edgeBias, float bandThreshold)
+    public static List<Vector3> Route(Vector3 startPort, Vector3 endPort,
+        LayerMask floorMask, LayerMask obstacleMask,
+        float cellSize, float pathHeight, float edgeBias, float bandThreshold,
+        int maxSnapCells)
     {
-        EnsureGrid(floorMask, wallMask, cellSize, baseboardHeight);
+        EnsureGrid(floorMask, obstacleMask, cellSize, pathHeight);
 
-        // Band lantai ditentukan dari FURNITUR (end). Inverter boleh di luar/atas lantai.
-        float endFloor = RaycastFloorY(end, floorMask);
+        // Band lantai ditentukan dari ALAT (end). Inverter boleh di luar/atas lantai.
+        float endFloor = RaycastFloorY(endPort, floorMask);
         if (endFloor < 0f) return null;
-
         float bandY = endFloor;
 
-        // Cari sel walkable terdekat dari inverter (bisa di luar area lantai) &
-        // dari furnitur, pada band lantai yang sama.
-        if (!TryFindWalkableCell(start, bandY, bandThreshold, out int sx, out int sz)) return null;
-        if (!TryFindWalkableCell(end, bandY, bandThreshold, out int ex, out int ez)) return null;
-        if (sx == ex && sz == ez) return new List<Vector3> { start, end };
+        if (!TryFindWalkableCell(startPort, bandY, bandThreshold, maxSnapCells, out int sx, out int sz)) return null;
+        if (!TryFindWalkableCell(endPort, bandY, bandThreshold, maxSnapCells, out int ex, out int ez)) return null;
 
-        // A*
-        var path = AStar(sx, sz, ex, ez, bandY, bandThreshold, edgeBias);
-        if (path == null) return null;
+        List<(int x, int z)> path;
+        if (sx == ex && sz == ez)
+        {
+            path = new List<(int, int)> { (sx, sz) };
+        }
+        else
+        {
+            path = AStar(sx, sz, ex, ez, bandY, bandThreshold, edgeBias);
+            if (path == null) return null;
+            path = Simplify(path);
+        }
 
-        path = Simplify(path);
-        if (path == null || path.Count == 0) return new List<Vector3> { start, end };
+        var result = new List<Vector3> { startPort };
 
-        var result = new List<Vector3> { start };
+        // Turun vertikal dari port awal ke lantai (di posisi x,z port)
+        result.Add(new Vector3(startPort.x, bandY + pathHeight, startPort.z));
+
         foreach (var c in path)
         {
             Vector3 p = CellCenter(c.x, c.z);
-            float fy = _floorY[c.z * _width + c.x];
-            p.y = fy + baseboardHeight;
+            p.y = _floorY[c.z * _width + c.x] + pathHeight;
             result.Add(p);
         }
-        result.Add(end);
+
+        // Naik vertikal ke port akhir
+        result.Add(new Vector3(endPort.x, bandY + pathHeight, endPort.z));
+        result.Add(endPort);
         return result;
     }
 
@@ -79,22 +91,26 @@ public static class CableRouter
 
     // ── Grid ────────────────────────────────────────────────────────────────
 
-    private static void EnsureGrid(LayerMask floorMask, LayerMask wallMask,
-        float cellSize, float baseboardHeight)
+    private static void EnsureGrid(LayerMask floorMask, LayerMask obstacleMask,
+        float cellSize, float pathHeight)
     {
         string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-        if (_cachedScene == scene && _cell == cellSize && _bounds.size != Vector3.zero)
+        if (_cachedScene == scene && _cell == cellSize
+            && _cachedFloorMask == floorMask.value && _cachedObstacleMask == obstacleMask.value
+            && _bounds.size != Vector3.zero)
             return;
 
         _cachedScene = scene;
         _cell = cellSize;
+        _cachedFloorMask = floorMask.value;
+        _cachedObstacleMask = obstacleMask.value;
 
-        GameObject house = GameObject.Find("House");
-        _bounds = house != null ? GetBounds(house) : GetFloorBounds(floorMask);
+        _bounds = GetFloorBounds(floorMask);
         if (_bounds.size == Vector3.zero)
-        {
             _bounds = new Bounds(Vector3.zero, new Vector3(2000f, 1f, 2000f));
-        }
+
+        // Beri margin agar sel tepi lantai tetap tercakup
+        _bounds.Expand(cellSize * 2f);
 
         _width = Mathf.Max(1, Mathf.CeilToInt(_bounds.size.x / _cell));
         _depth = Mathf.Max(1, Mathf.CeilToInt(_bounds.size.z / _cell));
@@ -102,7 +118,7 @@ public static class CableRouter
         int n = _width * _depth;
         _hasFloor = new bool[n];
         _floorY = new float[n];
-        _wallBlocked = new bool[n];
+        _blocked = new bool[n];
 
         Vector3 origin = _bounds.min;
         float probeY = _bounds.max.y + 50f;
@@ -123,8 +139,8 @@ public static class CableRouter
 
                 if (_hasFloor[idx])
                 {
-                    Vector3 probeCenter = new Vector3(cx, fy + baseboardHeight, cz);
-                    _wallBlocked[idx] = Physics.OverlapSphere(probeCenter, probeRadius, wallMask,
+                    Vector3 probeCenter = new Vector3(cx, fy + pathHeight, cz);
+                    _blocked[idx] = Physics.OverlapSphere(probeCenter, probeRadius, obstacleMask,
                         QueryTriggerInteraction.Ignore).Length > 0;
                 }
             }
@@ -136,7 +152,7 @@ public static class CableRouter
         floorY = 0f;
         if (ix < 0 || iz < 0 || ix >= _width || iz >= _depth) return false;
         int idx = iz * _width + ix;
-        if (!_hasFloor[idx] || _wallBlocked[idx]) return false;
+        if (!_hasFloor[idx] || _blocked[idx]) return false;
         floorY = _floorY[idx];
         return Mathf.Abs(floorY - bandY) <= bandThreshold;
     }
@@ -146,18 +162,19 @@ public static class CableRouter
         // Terlarang (di luar grid / sel terblok) dianggap "dinding"
         if (ix < 0 || iz < 0 || ix >= _width || iz >= _depth) return true;
         int idx = iz * _width + ix;
-        if (!_hasFloor[idx] || _wallBlocked[idx]) return true;
+        if (!_hasFloor[idx] || _blocked[idx]) return true;
         return Mathf.Abs(_floorY[idx] - bandY) > bandThreshold;
     }
 
     private static bool TryFindWalkableCell(Vector3 world, float bandY, float bandThreshold,
-        out int ox, out int oz)
+        int maxSnapCells, out int ox, out int oz)
     {
         int cx = Mathf.FloorToInt((world.x - _bounds.min.x) / _cell);
         int cz = Mathf.FloorToInt((world.z - _bounds.min.z) / _cell);
 
-        // Pencarian melebar dari sel awal (bisa jauh bila ujung di luar area lantai)
-        for (int r = 0; r < 400; r++)
+        // Pencarian melebar dari sel awal (bisa jauh bila ujung di luar area lantai),
+        // dibatasi maxSnapCells agar tidak "menyeret" segmen lurus terlalu panjang.
+        for (int r = 0; r <= maxSnapCells; r++)
         {
             for (int dz = -r; dz <= r; dz++)
             {
@@ -219,7 +236,7 @@ public static class CableRouter
                 int ni = niz * _width + nix;
                 if (closed[ni]) continue;
 
-                // Sel yang menempel dinding lebih murah → kabel menyusuri dinding
+                // Sel yang menempel dinding lebih murah → kabel menyusuri tepi
                 float step = IsWallNeighbor(nix, niz, bandY, bandThreshold) ? (1f - edgeBias) : 1f;
                 float ng = g[cur] + step;
                 if (ng < g[ni])
@@ -240,7 +257,7 @@ public static class CableRouter
 
     private static List<(int x, int z)> RebuildPath(int[] parent, int start, int end)
     {
-        if (parent[end] == -1) return null;
+        if (parent[end] == -1 && end != start) return null;
 
         var list = new List<(int, int)>();
         int cur = end;
@@ -272,15 +289,6 @@ public static class CableRouter
             return hit.point.y;
         }
         return -1f;
-    }
-
-    private static Bounds GetBounds(GameObject root)
-    {
-        Renderer[] rends = root.GetComponentsInChildren<Renderer>(true);
-        if (rends.Length == 0) return new Bounds(root.transform.position, Vector3.zero);
-        Bounds b = rends[0].bounds;
-        foreach (Renderer r in rends) b.Encapsulate(r.bounds);
-        return b;
     }
 
     private static Bounds GetFloorBounds(LayerMask floorMask)

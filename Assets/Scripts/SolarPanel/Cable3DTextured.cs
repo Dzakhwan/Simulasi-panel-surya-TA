@@ -18,6 +18,9 @@ public class Cable3DTextured : MonoBehaviour
     [SerializeField] int radialSegments = 8;
     [SerializeField] bool smoothBend = true;
     [SerializeField] int smoothStepsPerSegment = 8;
+    [Range(0.3f, 1f)]
+    [Tooltip("Batas besar tangent spline relatif terhadap panjang segmen. Makin kecil, kurva makin dekat polyline.")]
+    [SerializeField] float tangentClamp = 0.6f;
     [SerializeField] Material cableMaterial;
 
     [Header("Referensi Daya")]
@@ -229,7 +232,7 @@ public class Cable3DTextured : MonoBehaviour
     }
 
     // =========================================================
-    // Spline (Catmull-Rom)
+    // Spline (Catmull-Rom dengan tangent ter-clamp → anti overshoot)
     // =========================================================
 
     Vector3 CatmullRom(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
@@ -242,6 +245,25 @@ public class Cable3DTextured : MonoBehaviour
             (2f * p0 - 5f * p1 + 4f * p2 - p3) * t2 +
             (-p0 + 3f * p1 - 3f * p2 + p3) * t3
         );
+    }
+
+    /// <summary>
+    /// Catmull-Rom dengan tangent yang dibatasi maksimum `tangentClamp` × panjang segmen aktif.
+    /// Mencegah kurva membengkak (overshoot/children) saat jarak antar titik sangat timpang.
+    /// </summary>
+    Vector3 CatmullRomClamped(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
+    {
+        float segLen = Vector3.Distance(p1, p2);
+        Vector3 tan1 = Vector3.ClampMagnitude((p2 - p0) * 0.5f, tangentClamp * segLen);
+        Vector3 tan2 = Vector3.ClampMagnitude((p3 - p1) * 0.5f, tangentClamp * segLen);
+
+        float ts2 = t * t;
+        float ts3 = ts2 * t;
+        float h00 = 2f * ts3 - 3f * ts2 + 1f;
+        float h10 = ts3 - 2f * ts2 + t;
+        float h01 = -2f * ts3 + 3f * ts2;
+        float h11 = ts3 - ts2;
+        return h00 * p1 + h10 * tan1 + h01 * p2 + h11 * tan2;
     }
 
     void BuildSpline()
@@ -263,7 +285,7 @@ public class Cable3DTextured : MonoBehaviour
                 for (int j = 0; j < smoothStepsPerSegment; j++)
                 {
                     float t = (float)j / smoothStepsPerSegment;
-                    splinePoints.Add(CatmullRom(p0, p1, p2, p3, t));
+                    splinePoints.Add(CatmullRomClamped(p0, p1, p2, p3, t));
                 }
             }
         }

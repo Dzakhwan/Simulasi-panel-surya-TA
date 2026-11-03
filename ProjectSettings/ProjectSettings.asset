@@ -834,25 +834,25 @@ PlayerSettings:
   webWasm2023: 0
   webEnableSubmoduleStrippingCompatibility: 0
   scriptingDefineSymbols:
-    Android: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    EmbeddedLinux: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    GameCoreScarlett: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    GameCoreXboxOne: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    Kepler: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    LinuxHeadlessSimulation: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    Nintendo Switch: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    Nintendo Switch 2: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    PS4: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    PS5: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    QNX: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    Server: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    Standalone: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    VisionOS: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    WebGL: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    Windows Store Apps: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    XboxOne: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    iPhone: UNITY_MCP_READY;UNITY_MCP_DEPS_7
-    tvOS: UNITY_MCP_READY;UNITY_MCP_DEPS_7
+    Android: SENTIS_ANALYTICS_ENABLED;APP_UI_EDITOR_ONLY;UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    EmbeddedLinux: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    GameCoreScarlett: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    GameCoreXboxOne: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    Kepler: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    LinuxHeadlessSimulation: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    Nintendo Switch: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    Nintendo Switch 2: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    PS4: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    PS5: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    QNX: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    Server: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    Standalone: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    VisionOS: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    WebGL: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    Windows Store Apps: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    XboxOne: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    iPhone: UNITY_MCP_READY;UNITY_MCP_DEPS_30
+    tvOS: UNITY_MCP_READY;UNITY_MCP_DEPS_30
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend:
@@ -929,7 +929,13 @@ PlayerSettings:
   XboxOneOverrideIdentityName: 
   XboxOneOverrideIdentityPublisher: 
   vrEditorSettings: {}
-  cloudServicesEnabled: {}
+  cloudServicesEnabled:
+    Build: 0
+    Game Performance: 0
+    Legacy Analytics: 0
+    Purchasing: 0
+    UDP: 0
+    Unity Ads: 0
   luminIcon:
     m_Name: 
     m_ModelFolderPath: 
@@ -951,11 +957,11 @@ PlayerSettings:
   captureStartupLogs: {}
   activeInputHandler: 2
   windowsGamepadBackendHint: 0
-  cloudProjectId: 
+  cloudProjectId: 5092df28-db79-44a5-a4d6-b2beaa3e39af
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName: 
-  organizationId: 
+  projectName: SolarSteam Lab
+  organizationId: dzakhwantastic
   cloudEnabled: 0
   legacyClampBlendShapeWeights: 0
   hmiLoadingImage: {fileID: 0}

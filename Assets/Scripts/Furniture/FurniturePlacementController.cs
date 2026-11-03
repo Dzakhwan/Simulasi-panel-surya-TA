@@ -308,6 +308,9 @@ public class FurniturePlacementController : MonoBehaviour
                     float distToFloor = Vector3.Distance(_cam.transform.position, floorPoint);
                     if (Physics.Raycast(occRay, out _, distToFloor - 0.1f, ~floorLayerMask, QueryTriggerInteraction.Ignore))
                         _ghostValid = false;
+
+                    if (_ghostValid && !HasValidPlacementSpace())
+                        _ghostValid = false;
                 }
                 else
                 {
@@ -377,6 +380,34 @@ public class FurniturePlacementController : MonoBehaviour
 
         FurnitureManager.Instance.AddFurniture(data, pos, rot);
         card?.OnPlacementComplete();
+    }
+
+    private bool HasValidPlacementSpace()
+    {
+        if (_ghost == null) return false;
+
+        Renderer[] renderers = _ghost.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length == 0) return false;
+
+        Bounds bounds = renderers[0].bounds;
+        foreach (Renderer renderer in renderers)
+            bounds.Encapsulate(renderer.bounds);
+
+        int floorLayer = Mathf.RoundToInt(Mathf.Log(Mathf.Max(1, floorLayerMask.value), 2f));
+        Collider[] hits = Physics.OverlapBox(bounds.center, bounds.extents, Quaternion.identity,
+            ~0, QueryTriggerInteraction.Ignore);
+
+        foreach (Collider hit in hits)
+        {
+            if (hit == null || hit.transform.IsChildOf(_ghost.transform)) continue;
+            if (hit.gameObject.layer == floorLayer) continue;
+
+            Bounds other = hit.bounds;
+            bool supportBelow = other.max.y <= bounds.min.y + 0.08f;
+            if (!supportBelow) return false;
+        }
+
+        return true;
     }
 
     private bool TryGetFloorPoint(Vector2 screenPos, out Vector3 point)
@@ -451,6 +482,13 @@ public class FurniturePlacementController : MonoBehaviour
         if (SimulationManager.Instance != null && SimulationManager.Instance.IsSimulationRunning)
             return;
 
+        // Sedang mode sambung kabel (dari CableConnectController) → jangan buka kartu info
+        if (CableConnectController.IsConnectModeActive)
+        {
+            CancelSelection();
+            return;
+        }
+
         if (!IsFurnitureModeActive())
         {
             CancelSelection();
@@ -474,6 +512,12 @@ public class FurniturePlacementController : MonoBehaviour
         {
             CancelSelection();
         }
+    }
+
+    /// <summary>Pilih instance furnitur di posisi layar (dipakai CableConnectController).</summary>
+    public bool TryPickInstance(Vector2 screenPos, out GameObject picked)
+    {
+        return TryPickFurniture(screenPos, out picked);
     }
 
     private bool TryPickFurniture(Vector2 screenPos, out GameObject picked)
