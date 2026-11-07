@@ -17,15 +17,21 @@ public class CableWaypointGraph : MonoBehaviour
     [SerializeField] private List<CableWaypoint> waypoints = new();
 
     [Header("Pengaturan Pencarian")]
-    [Tooltip("Jarak maksimum dari port ke simpul graf pertama/terakhir.")]
+    [Tooltip("Jarak maksimum antar waypoint bertetangga. Mencegah kabel melompati node yang terlalu jauh.")]
+    [SerializeField] private float maxWaypointLinkDistance = 1f;
+
+    [Header("Radius Kandidat Port")]
+    [Tooltip("Jarak maksimum port inverter/alat ke waypoint awal/akhir.")]
     [SerializeField] private float maxCandidateRadius = 500f;
+
+    public float MaxCandidateRadius => maxCandidateRadius;
+    public float MaxWaypointLinkDistance => maxWaypointLinkDistance;
 
     [Header("Visualisasi Editor")]
     [SerializeField] private bool showGraphGizmos = true;
     [SerializeField] private Color edgeColor = new Color(0.2f, 0.8f, 1f, 0.6f);
 
     public IReadOnlyList<CableWaypoint> Waypoints => waypoints;
-    public float MaxCandidateRadius => maxCandidateRadius;
 
     private void Awake()
     {

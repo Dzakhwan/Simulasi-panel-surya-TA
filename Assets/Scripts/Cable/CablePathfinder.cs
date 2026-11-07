@@ -60,26 +60,13 @@ public static class CablePathfinder
             return null;
         }
 
-        // 1. Dapatkan kandidat simpul masuk (dekat inverter) dan keluar (dekat alat) yang bebas rintangan.
-        //    Radius adaptif: 1x → 1.5x → 2x dari maxSnapRadius agar koneksi tidak gagal karena
-        //    selisih beberapa unit saja (mis. 501 > 500).
-        List<CableWaypointGraph.CandidateWaypoint> startCandidates = null;
-        List<CableWaypointGraph.CandidateWaypoint> endCandidates = null;
-
-        for (float factor = 1f; factor <= 2.01f; factor += 0.5f)
-        {
-            float radius = maxSnapRadius * factor;
-            startCandidates = graph.FindCandidates(startPort, obstacleMask, radius, startSource);
-            endCandidates = graph.FindCandidates(endPort, obstacleMask, radius, endSource);
-
-            if (startCandidates.Count > 0 && endCandidates.Count > 0)
-                break;
-
-            if (startCandidates.Count > 0 && endCandidates.Count == 0)
-                Debug.LogWarning($"[CablePathfinder] Kandidat akhir kosong pada radius {radius:F0} — mencoba radius lebih besar.");
-            else if (endCandidates.Count > 0 && startCandidates.Count == 0)
-                Debug.LogWarning($"[CablePathfinder] Kandidat awal kosong pada radius {radius:F0} — mencoba radius lebih besar.");
-        }
+        // Radius graph adalah batas mutlak. Tidak ada pelebaran otomatis yang
+        // memungkinkan kabel melompat jauh dari waypoint yang dirancang user.
+        float candidateRadius = Mathf.Min(maxSnapRadius, graph.MaxCandidateRadius);
+        List<CableWaypointGraph.CandidateWaypoint> startCandidates =
+            graph.FindCandidates(startPort, obstacleMask, candidateRadius, startSource);
+        List<CableWaypointGraph.CandidateWaypoint> endCandidates =
+            graph.FindCandidates(endPort, obstacleMask, candidateRadius, endSource);
 
         if (startCandidates.Count == 0)
         {
@@ -93,54 +80,53 @@ public static class CablePathfinder
             return null;
         }
 
+        CableWaypointGraph.CandidateWaypoint startNodeCandidate = default;
         CableWaypointGraph.CandidateWaypoint terminal = default;
-        bool terminalFound = false;
-        float terminalDistance = float.MaxValue;
-        foreach (var candidate in endCandidates)
-        {
-            if (candidate.waypoint == null) continue;
-            if (candidate.distance < terminalDistance)
-            {
-                terminal = candidate;
-                terminalDistance = candidate.distance;
-                terminalFound = true;
-            }
-        }
-
-        if (!terminalFound)
-        {
-            Debug.LogWarning("[CablePathfinder] Tidak ada terminal waypoint valid di dekat alat.");
-            return null;
-        }
-
-        float bestTotalCost = float.MaxValue;
         List<CableWaypoint> bestWaypointPath = null;
-        var evaluatedStarts = new HashSet<CableWaypoint>();
 
-        foreach (var startCand in startCandidates)
+        foreach (var endCandidate in endCandidates)
         {
-            CableWaypoint s = startCand.waypoint;
-            CableWaypoint e = terminal.waypoint;
-            if (s == null || evaluatedStarts.Contains(s)) continue;
-            evaluatedStarts.Add(s);
+            if (endCandidate.waypoint == null) continue;
 
-            RunDijkstra(s, out var distMap, out var prevMap);
-            if (!distMap.TryGetValue(e, out float graphCost) || graphCost == float.MaxValue)
-                continue;
+            float bestStartCost = float.MaxValue;
+            CableWaypointGraph.CandidateWaypoint bestStart = default;
+            List<CableWaypoint> bestPathForEnd = null;
 
-            float totalCost = startCand.distance * connectorCostScale
-                            + graphCost
-                            + terminal.distance * connectorCostScale;
-            if (totalCost < bestTotalCost)
+            foreach (var startCandidate in startCandidates)
             {
-                bestTotalCost = totalCost;
-                bestWaypointPath = ReconstructPath(s, e, prevMap);
+                if (startCandidate.waypoint == null) continue;
+                RunDijkstra(startCandidate.waypoint, out var distMap, out var prevMap, graph.MaxWaypointLinkDistance);
+
+                if (!distMap.TryGetValue(endCandidate.waypoint, out float graphCost) || graphCost == float.MaxValue)
+                    continue;
+
+                List<CableWaypoint> path = ReconstructPath(startCandidate.waypoint, endCandidate.waypoint, prevMap);
+                if (path == null || path.Count == 0) continue;
+
+                float startCost = startCandidate.distance * connectorCostScale + graphCost;
+                if (startCost < bestStartCost)
+                {
+                    bestStartCost = startCost;
+                    bestStart = startCandidate;
+                    bestPathForEnd = path;
+                }
+            }
+
+            if (bestPathForEnd != null)
+            {
+                startNodeCandidate = bestStart;
+                terminal = endCandidate;
+                bestWaypointPath = bestPathForEnd;
+                break;
             }
         }
+
+        if (bestWaypointPath != null)
+            Debug.Log($"[CablePathfinder] Rute node demi node: {startNodeCandidate.waypoint.name} -> {terminal.waypoint.name} ({bestWaypointPath.Count} node)");
 
         if (bestWaypointPath == null || bestWaypointPath.Count == 0)
         {
-            Debug.LogWarning("[CablePathfinder] Graf terputus: tidak ditemukan jalur waypoint dari Inverter ke Peralatan.");
+            Debug.LogWarning("[CablePathfinder] Graf terputus: tidak ada jalur bertetangga dari inverter ke terminal alat.");
             return null;
         }
 
@@ -163,7 +149,8 @@ public static class CablePathfinder
     public static void RunDijkstra(
         CableWaypoint start,
         out Dictionary<CableWaypoint, float> dist,
-        out Dictionary<CableWaypoint, CableWaypoint> prev)
+        out Dictionary<CableWaypoint, CableWaypoint> prev,
+        float maxWaypointLinkDistance = float.PositiveInfinity)
     {
         dist = new Dictionary<CableWaypoint, float>();
         prev = new Dictionary<CableWaypoint, CableWaypoint>();
@@ -185,7 +172,7 @@ public static class CablePathfinder
             var u = queue.Dequeue();
             foreach (var v in u.Neighbors)
             {
-                if (v != null && !discovered.Contains(v))
+                if (v != null && Vector3.Distance(u.Position, v.Position) <= maxWaypointLinkDistance && !discovered.Contains(v))
                 {
                     discovered.Add(v);
                     dist[v] = float.MaxValue;
@@ -218,7 +205,7 @@ public static class CablePathfinder
             // Relaksasi tetangga
             foreach (var v in u.Neighbors)
             {
-                if (v == null || !unvisited.Contains(v)) continue;
+                if (v == null || !unvisited.Contains(v) || Vector3.Distance(u.Position, v.Position) > maxWaypointLinkDistance) continue;
 
                 float edgeWeight = Vector3.Distance(u.Position, v.Position);
                 float alt = minDist + edgeWeight;

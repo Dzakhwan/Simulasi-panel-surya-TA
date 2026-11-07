@@ -105,11 +105,23 @@ public class CableManager : MonoBehaviour
             waypointGraph = FindFirstObjectByType<CableWaypointGraph>();
 
         _systemRoot = new GameObject("[CableSystem]").transform;
+        if (deactivateLegacyCables)
+            DisableLegacyCableRoots();
         _resolvedAnchors = ResolveInverterAnchors();
         if (_resolvedAnchors.Length == 0)
             Debug.LogWarning("[CableManager] Tidak ada inverter ditemukan. Buat GO bernama 'Inverter' atau isi daftar manual.");
 
         CleanupOrphanShells();
+    }
+
+    private void DisableLegacyCableRoots()
+    {
+        foreach (var root in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (root.parent != null || !root.name.StartsWith("Cable") || root.name == "[CableSystem]") continue;
+            if (root.GetComponentInChildren<Cable3DTextured>(true) == null) continue;
+            root.gameObject.SetActive(false);
+        }
     }
 
     void Update()
@@ -355,7 +367,7 @@ public class CableManager : MonoBehaviour
         var c3d = cable.AddComponent<Cable3DTextured>();
         c3d.ConfigureCable(null, data.prefab3D,
             electronCount, electronSpeed, electronRadius, cableRadius, null,
-            smooth: smoothCableCurves);
+            smooth: routingMode != RoutingMode.Dijkstra && smoothCableCurves);
 
         return cable;
     }
