@@ -484,10 +484,15 @@ public class Cable3DTextured : MonoBehaviour
 
         if (mat.HasProperty("_BaseMap"))   mat.SetTexture("_BaseMap", tex);
         if (mat.HasProperty("_MainTex"))   mat.SetTexture("_MainTex", tex);
-        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
-        if (mat.HasProperty("_Color"))     mat.SetColor("_Color", Color.white);
+         if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", electronColor);
+         if (mat.HasProperty("_Color"))     mat.SetColor("_Color", electronColor);
+         if (mat.HasProperty("_EmissionColor"))
+         {
+             mat.EnableKeyword("_EMISSION");
+             mat.SetColor("_EmissionColor", electronColor * 3f);
+         }
 
-        return mat;
+         return mat;
     }
 
     /// <summary>

@@ -13,12 +13,20 @@ public class CableWaypointGraph : MonoBehaviour
     public static CableWaypointGraph Instance { get; private set; }
 
     [Header("Daftar Waypoint")]
-    [Tooltip("Daftar simpul pada graf ini. Bisa diisi manual atau otomatis via tombol di Context Menu.")]
+    [Tooltip("Daftar simpul manual tetap didukung sebagai fallback dan dapat digabung dengan auto-detect.")]
     [SerializeField] private List<CableWaypoint> waypoints = new();
+    [Tooltip("Gabungkan waypoint manual dengan semua GameObject bertag yang memiliki CableWaypoint.")]
+    [SerializeField] private bool autoCollectTaggedWaypoints = true;
+    [Tooltip("Tag Unity untuk auto-detect waypoint.")]
+    [SerializeField] private string waypointTag = "kabel";
 
     [Header("Pengaturan Pencarian")]
-    [Tooltip("Jarak maksimum antar waypoint bertetangga. Mencegah kabel melompati node yang terlalu jauh.")]
-    [SerializeField] private float maxWaypointLinkDistance = 1f;
+    [Tooltip("Jarak maksimum antar waypoint bertetangga dalam Unity world units.")]
+    [SerializeField] private float maxWaypointLinkDistance = 220f;
+    [Tooltip("Jarak alat ke backbone dinding sebelum cabang Floor dipertimbangkan, dalam Unity world units.")]
+    [SerializeField] private float wallBranchDistance = 180f;
+    [Tooltip("Radius pencarian waypoint Floor dari port alat, dalam Unity world units.")]
+    [SerializeField] private float floorBranchDistance = 250f;
 
     [Header("Radius Kandidat Port")]
     [Tooltip("Jarak maksimum port inverter/alat ke waypoint awal/akhir.")]
@@ -26,6 +34,8 @@ public class CableWaypointGraph : MonoBehaviour
 
     public float MaxCandidateRadius => maxCandidateRadius;
     public float MaxWaypointLinkDistance => maxWaypointLinkDistance;
+    public float WallBranchDistance => wallBranchDistance;
+    public float FloorBranchDistance => floorBranchDistance;
 
     [Header("Visualisasi Editor")]
     [SerializeField] private bool showGraphGizmos = true;
@@ -49,6 +59,24 @@ public class CableWaypointGraph : MonoBehaviour
     private void OnEnable()
     {
         if (Instance == null) Instance = this;
+        CollectTaggedWaypoints();
+    }
+
+    private void CollectTaggedWaypoints()
+    {
+        if (!autoCollectTaggedWaypoints || string.IsNullOrWhiteSpace(waypointTag)) return;
+        try
+        {
+            foreach (var go in GameObject.FindGameObjectsWithTag(waypointTag))
+            {
+                var wp = go.GetComponent<CableWaypoint>();
+                if (wp != null && !waypoints.Contains(wp)) waypoints.Add(wp);
+            }
+        }
+        catch (UnityException)
+        {
+            Debug.LogWarning($"[CableWaypointGraph] Tag '{waypointTag}' belum tersedia; daftar manual tetap digunakan.");
+        }
     }
 
     private void OnDestroy()
@@ -76,14 +104,18 @@ public class CableWaypointGraph : MonoBehaviour
             if (wp == null) continue;
 
             float dist = Vector3.Distance(fromPos, wp.Position);
-            if (dist > maxRadius) continue;
+            if (dist > maxRadius)
+            {
+                Debug.Log($"[CableWaypointGraph] Kandidat di luar radius: '{wp.name}' jarak={dist:F1} > radius={maxRadius:F1}");
+                continue;
+            }
 
-            // Line-of-sight check: pastikan garis dari fromPos ke waypoint tidak menembus dinding
             if (obstacleMask.value != 0)
             {
                 if (!CablePathfinder.LinecastFree(fromPos, wp.Position, obstacleMask, source))
                 {
-                    // Terhalang dinding/obstacle
+                    string sourceName = source != null ? source.name : "none";
+                    Debug.LogWarning($"[CableWaypointGraph] LOS ditolak: port={fromPos} waypoint='{wp.name}' jarak={dist:F1} mask={obstacleMask.value} source='{sourceName}'");
                     continue;
                 }
             }
@@ -119,6 +151,7 @@ public class CableWaypointGraph : MonoBehaviour
             if (wp != null && !waypoints.Contains(wp))
                 waypoints.Add(wp);
         }
+        CollectTaggedWaypoints();
         Debug.Log($"[CableWaypointGraph] {waypoints.Count} waypoint berhasil dikumpulkan.");
     }
 

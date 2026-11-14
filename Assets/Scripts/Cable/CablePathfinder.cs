@@ -63,22 +63,26 @@ public static class CablePathfinder
         // Radius graph adalah batas mutlak. Tidak ada pelebaran otomatis yang
         // memungkinkan kabel melompat jauh dari waypoint yang dirancang user.
         float candidateRadius = Mathf.Min(maxSnapRadius, graph.MaxCandidateRadius);
-        List<CableWaypointGraph.CandidateWaypoint> startCandidates =
-            graph.FindCandidates(startPort, obstacleMask, candidateRadius, startSource);
+        List<CableWaypointGraph.CandidateWaypoint> startCandidates = FilterCandidates(
+            graph.FindCandidates(startPort, obstacleMask, candidateRadius, startSource), false, float.PositiveInfinity);
         List<CableWaypointGraph.CandidateWaypoint> endCandidates =
             graph.FindCandidates(endPort, obstacleMask, candidateRadius, endSource);
 
+        endCandidates = FilterCandidatesByBranchDistance(endCandidates, graph);
+
         if (startCandidates.Count == 0)
         {
-            Debug.LogWarning("[CablePathfinder] Tidak ada waypoint yang dapat dijangkau dari Inverter (terhalang dinding atau di luar radius).");
+            Debug.LogWarning($"[CablePathfinder] FAIL start: tidak ada waypoint valid dari port inverter {startPort} dalam radius {candidateRadius:F1}.");
             return null;
         }
 
         if (endCandidates.Count == 0)
         {
-            Debug.LogWarning("[CablePathfinder] Tidak ada waypoint yang dapat dijangkau dari Peralatan (terhalang dinding atau di luar radius).");
+            Debug.LogWarning($"[CablePathfinder] FAIL end: tidak ada waypoint valid dari port alat {endPort} dalam radius {candidateRadius:F1}.");
             return null;
         }
+
+        Debug.Log($"[CablePathfinder] Kandidat start={startCandidates.Count}, end={endCandidates.Count}; startPort={startPort}; endPort={endPort}");
 
         CableWaypointGraph.CandidateWaypoint startNodeCandidate = default;
         CableWaypointGraph.CandidateWaypoint terminal = default;
@@ -103,6 +107,13 @@ public static class CablePathfinder
                 List<CableWaypoint> path = ReconstructPath(startCandidate.waypoint, endCandidate.waypoint, prevMap);
                 if (path == null || path.Count == 0) continue;
 
+                bool usesFloorBranch = endCandidate.waypoint.Category == WaypointCategory.Floor;
+                if (usesFloorBranch && !HasBackboneBeforeFloor(path))
+                {
+                    Debug.LogWarning($"[CablePathfinder] END ditolak: {endCandidate.waypoint.name}; tidak ada jalur backbone Wall menuju Floor.");
+                    continue;
+                }
+
                 float startCost = startCandidate.distance * connectorCostScale + graphCost;
                 if (startCost < bestStartCost)
                 {
@@ -126,7 +137,9 @@ public static class CablePathfinder
 
         if (bestWaypointPath == null || bestWaypointPath.Count == 0)
         {
-            Debug.LogWarning("[CablePathfinder] Graf terputus: tidak ada jalur bertetangga dari inverter ke terminal alat.");
+            Debug.LogWarning("[CablePathfinder] FAIL graph: semua kandidat terminal tidak tercapai dari kandidat start.");
+            foreach (var endCandidate in endCandidates)
+                Debug.LogWarning($"[CablePathfinder] END tidak tercapai: {endCandidate.waypoint.name} dPort={endCandidate.distance:F1}");
             return null;
         }
 
@@ -146,6 +159,40 @@ public static class CablePathfinder
     /// <summary>
     /// Algoritma Dijkstra standar untuk satu simpul asal ke semua simpul yang dapat dijangkau.
     /// </summary>
+    private static bool HasBackboneBeforeFloor(List<CableWaypoint> path)
+    {
+        bool backboneSeen = false;
+        foreach (var waypoint in path)
+        {
+            if (waypoint == null) continue;
+            if (waypoint.Category == WaypointCategory.Floor)
+                return backboneSeen;
+            backboneSeen = true;
+        }
+        return false;
+    }
+
+    private static List<CableWaypointGraph.CandidateWaypoint> FilterCandidatesByBranchDistance(
+        List<CableWaypointGraph.CandidateWaypoint> candidates, CableWaypointGraph graph)
+    {
+        candidates.Sort((a, b) => a.distance.CompareTo(b.distance));
+        return candidates;
+    }
+
+    private static List<CableWaypointGraph.CandidateWaypoint> FilterCandidates(
+        List<CableWaypointGraph.CandidateWaypoint> candidates, bool floorOnly, float maxDistance)
+    {
+        var result = new List<CableWaypointGraph.CandidateWaypoint>();
+        foreach (var candidate in candidates)
+        {
+            if (candidate.waypoint == null || candidate.distance > maxDistance) continue;
+            bool isFloor = candidate.waypoint.Category == WaypointCategory.Floor;
+            if (floorOnly != isFloor) continue;
+            result.Add(candidate);
+        }
+        return result;
+    }
+
     public static void RunDijkstra(
         CableWaypoint start,
         out Dictionary<CableWaypoint, float> dist,
@@ -172,6 +219,8 @@ public static class CablePathfinder
             var u = queue.Dequeue();
             foreach (var v in u.Neighbors)
             {
+                if (v != null && Vector3.Distance(u.Position, v.Position) > maxWaypointLinkDistance)
+                    Debug.LogWarning($"[CablePathfinder] EDGE ditolak: {u.name} -> {v.name}; jarak={Vector3.Distance(u.Position, v.Position):F1} > limit={maxWaypointLinkDistance:F1}");
                 if (v != null && Vector3.Distance(u.Position, v.Position) <= maxWaypointLinkDistance && !discovered.Contains(v))
                 {
                     discovered.Add(v);

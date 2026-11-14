@@ -32,6 +32,9 @@ public class FurniturePlacementController : MonoBehaviour
     [Tooltip("Cooldown setelah BeginPlacement agar tap kartu tidak langsung menempatkan (detik).")]
     [SerializeField] private float placementCooldown = 0.2f;
 
+    [Tooltip("Toleransi ruang kosong di sekitar bounds barang dalam Unity units.")]
+    [SerializeField] private float placementCollisionMargin = 0.05f;
+
     [Header("Info Card")]
     [Tooltip("Warna latar kartu info seleksi.")]
     [SerializeField] private Color cardBackground = new Color(0.12f, 0.13f, 0.16f, 0.96f);
@@ -43,6 +46,10 @@ public class FurniturePlacementController : MonoBehaviour
     private FurnitureData _data;
     private FurnitureCardUI _sourceCard;
     private GameObject _ghost;
+    private GameObject _movingInstance;
+    private Vector3 _moveOriginalPosition;
+    private Quaternion _moveOriginalRotation;
+    private bool _isMoving;
     private float _ghostRotY;
     private float _beginTime;
     private Camera _cam;
@@ -236,12 +243,45 @@ public class FurniturePlacementController : MonoBehaviour
     }
 
     /// <summary>Batalkan mode penempatan (ghost dihancurkan).</summary>
+    public void BeginMove(GameObject instance)
+    {
+        if (instance == null || FurnitureManager.Instance == null) return;
+        if (!FurnitureManager.Instance.TryGetDataOf(instance, out var data)) return;
+
+        CancelSelection();
+        CableManager.Instance?.Disconnect(instance);
+        _movingInstance = instance;
+        _moveOriginalPosition = instance.transform.position;
+        _moveOriginalRotation = instance.transform.rotation;
+        _ghost = instance;
+        _data = data;
+        _isMoving = true;
+        IsPlacing = true;
+        _ghostValid = true;
+        _ghostRotY = instance.transform.eulerAngles.y;
+        SetLayerRecursively(_ghost, LayerMask.NameToLayer("Ignore Raycast"));
+        foreach (var col in _ghost.GetComponentsInChildren<Collider>(true)) col.enabled = false;
+        ShowPlacementUI();
+    }
+
     public void CancelPlacement()
     {
         if (!IsPlacing) return;
         IsPlacing = false;
 
-        if (_ghost != null)
+        if (_isMoving && _movingInstance != null)
+        {
+            _movingInstance.transform.SetPositionAndRotation(_moveOriginalPosition, _moveOriginalRotation);
+            SetLayerRecursively(_movingInstance, 0);
+            foreach (var col in _movingInstance.GetComponentsInChildren<Collider>(true)) col.enabled = true;
+            ClearPlacementTint(_movingInstance);
+            if (FurnitureManager.Instance.TryGetDataOf(_movingInstance, out var data))
+                CableManager.Instance?.Connect(_movingInstance, data);
+            _movingInstance = null;
+            _isMoving = false;
+            _ghost = null;
+        }
+        else if (_ghost != null)
         {
             Destroy(_ghost);
             _ghost = null;
@@ -376,8 +416,26 @@ public class FurniturePlacementController : MonoBehaviour
         FurnitureData data = _data;
         FurnitureCardUI card = _sourceCard;
 
-        CancelPlacement();
+        if (_isMoving && _movingInstance != null)
+        {
+            GameObject moved = _movingInstance;
+            moved.transform.SetPositionAndRotation(pos, rot);
+            SetLayerRecursively(moved, 0);
+            foreach (var col in moved.GetComponentsInChildren<Collider>(true)) col.enabled = true;
+            ClearPlacementTint(moved);
+            _movingInstance = null;
+            _isMoving = false;
+            _ghost = null;
+            IsPlacing = false;
+            if (_placementUI != null) Destroy(_placementUI);
+            _placementUI = null;
+            _data = null;
+            CableManager.Instance?.Connect(moved, data);
+            CancelSelection();
+            return;
+        }
 
+        CancelPlacement();
         FurnitureManager.Instance.AddFurniture(data, pos, rot);
         card?.OnPlacementComplete();
     }
@@ -394,7 +452,11 @@ public class FurniturePlacementController : MonoBehaviour
             bounds.Encapsulate(renderer.bounds);
 
         int floorLayer = Mathf.RoundToInt(Mathf.Log(Mathf.Max(1, floorLayerMask.value), 2f));
-        Collider[] hits = Physics.OverlapBox(bounds.center, bounds.extents, Quaternion.identity,
+        Vector3 extents = bounds.extents - Vector3.one * placementCollisionMargin;
+        extents.x = Mathf.Max(0.01f, extents.x);
+        extents.y = Mathf.Max(0.01f, extents.y);
+        extents.z = Mathf.Max(0.01f, extents.z);
+        Collider[] hits = Physics.OverlapBox(bounds.center, extents, _ghost.transform.rotation,
             ~0, QueryTriggerInteraction.Ignore);
 
         foreach (Collider hit in hits)
@@ -403,8 +465,11 @@ public class FurniturePlacementController : MonoBehaviour
             if (hit.gameObject.layer == floorLayer) continue;
 
             Bounds other = hit.bounds;
-            bool supportBelow = other.max.y <= bounds.min.y + 0.08f;
-            if (!supportBelow) return false;
+            bool supportBelow = other.max.y <= bounds.min.y + 0.12f;
+            if (supportBelow) continue;
+
+            Debug.Log($"[FurniturePlacement] Posisi invalid: collider '{hit.name}' layer={hit.gameObject.layer} bounds={other}");
+            return false;
         }
 
         return true;
@@ -443,6 +508,13 @@ public class FurniturePlacementController : MonoBehaviour
             mpb.SetColor("_BaseColor", color);
             rend.SetPropertyBlock(mpb);
         }
+    }
+
+    private static void ClearPlacementTint(GameObject root)
+    {
+        if (root == null) return;
+        foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            renderer.SetPropertyBlock(null);
     }
 
     private static bool TryGetLowestY(GameObject obj, out float lowY)
@@ -626,7 +698,7 @@ public class FurniturePlacementController : MonoBehaviour
         cardRect.anchorMin = new Vector2(0.5f, 0.5f);
         cardRect.anchorMax = new Vector2(0.5f, 0.5f);
         cardRect.pivot = new Vector2(0.5f, 0.5f);
-        cardRect.sizeDelta = new Vector2(230f, 130f);
+        cardRect.sizeDelta = new Vector2(300f, 250f);
 
         Image bg = card.GetComponent<Image>();
         bg.color = cardBackground;
@@ -649,15 +721,20 @@ public class FurniturePlacementController : MonoBehaviour
 
         // Row tombol
         GameObject row = new GameObject("ButtonRow",
-            typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            typeof(RectTransform), typeof(VerticalLayoutGroup));
         row.transform.SetParent(card.transform, false);
 
-        var rowLayout = row.GetComponent<HorizontalLayoutGroup>();
-        rowLayout.spacing = 8f;
+        var rowLayout = row.GetComponent<VerticalLayoutGroup>();
+        rowLayout.spacing = 6f;
         rowLayout.childControlWidth = true;
         rowLayout.childControlHeight = true;
         rowLayout.childForceExpandWidth = true;
         rowLayout.childForceExpandHeight = false;
+
+        AddButton(row.transform, "Pindahkan", new Color(0.25f, 0.45f, 0.85f, 1f), () =>
+        {
+            BeginMove(instance);
+        });
 
         bool isConnected = CableManager.Instance != null && CableManager.Instance.IsConnected(instance);
         AddButton(row.transform, isConnected ? "Putus Kabel" : "Sambung Kabel",
@@ -742,7 +819,7 @@ public class FurniturePlacementController : MonoBehaviour
         img.color = color;
 
         var layoutEl = btnGO.AddComponent<LayoutElement>();
-        layoutEl.preferredHeight = 36f;
+        layoutEl.preferredHeight = 44f;
 
         Button btn = btnGO.GetComponent<Button>();
         btn.targetGraphic = img;
