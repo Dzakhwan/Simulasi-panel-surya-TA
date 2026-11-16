@@ -18,7 +18,7 @@ List all Unity-MCP tools registered in the connected Unity Editor instance. Opti
 
 ## Behavior
 
-Iterates `UnityMcpPluginEditor.Instance.Tools.GetAllTools()`, evaluates the filter (if any), and projects each surviving tool into a `ToolInfoData` honoring the verbosity toggles. `Visible` is false for a hidden tool: it is not offered to MCP clients in `tools/list`. Hidden tools (Visible false) are not offered to MCP clients; ask the user to show one in the MCP Tools window (Window > AI Game Developer — MCP, Tools > Open) or with unity-mcp-cli configure --enable-tools <name>, instead of changing visibility yourself.
+Iterates `UnityMcpPluginEditor.Instance.Tools.GetAllTools()`, evaluates the filter (if any), and projects each surviving tool into a `ToolInfoData` honoring the verbosity toggles. `Visible` is false for a hidden tool: it is not offered to MCP clients in `tools/list`. Hidden tools (Visible false) are not offered to MCP clients; ask the user to show one in the MCP Tools window (Window > AI Game Dev, Tools > Open) or with unity-mcp-cli configure --enable-tools <name>, instead of changing visibility yourself.
 
 ## How to Call
 

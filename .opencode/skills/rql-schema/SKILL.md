@@ -9,6 +9,8 @@ metadata:
 # RQL / Schema
 
 Without a type: RQL sources, asset functions, the installed extensions (always active) with their guide topics, and the component types present in the loaded scenes (with counts), plus GameObject and Transform members. "guide:<topic>" prints one of the listed guides. With a type name (e.g. "Light", "Enemy", "Vector3"): that type's members (name type; ro = read-only) and methods. Use it before querying an unfamiliar component.
+RQL reference: https://ai-game.dev/docs/rql
+
 
 ## How to Call
 

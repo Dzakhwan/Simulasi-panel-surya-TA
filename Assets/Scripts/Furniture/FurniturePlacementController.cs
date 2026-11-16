@@ -50,6 +50,7 @@ public class FurniturePlacementController : MonoBehaviour
     private Vector3 _moveOriginalPosition;
     private Quaternion _moveOriginalRotation;
     private bool _isMoving;
+    private bool _simsPlacementMode;
     private float _ghostRotY;
     private float _beginTime;
     private Camera _cam;
@@ -154,7 +155,13 @@ public class FurniturePlacementController : MonoBehaviour
     // ── Public API ─────────────────────────────────────────────────────────
 
     /// <summary>Mulai mode penempatan untuk satu jenis furnitur.</summary>
-    public void BeginPlacement(FurnitureData data, FurnitureCardUI sourceCard)
+    public void BeginPlacementFromSims(FurnitureData data)
+    {
+        _simsPlacementMode = true;
+        BeginPlacement(data, null);
+    }
+
+    public void BeginPlacement(FurnitureData data, FurnitureCardUI sourceCard = null)
     {
         if (data == null || data.prefab3D == null)
         {
@@ -168,10 +175,22 @@ public class FurniturePlacementController : MonoBehaviour
             return;
         }
 
-        if (!IsFurnitureModeActive())
+        if (!_simsPlacementMode && !IsFurnitureModeActive())
         {
-            Debug.Log("[FurniturePlacement] Masuk mode furnitur dulu.");
-            return;
+            var installers = FindObjectsByType<FurnitureInstaller>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            FurnitureInstaller installer = null;
+            foreach (var candidate in installers)
+            {
+                if (candidate == null) continue;
+                if (installer == null) installer = candidate;
+                if (candidate.IsFurnitureMode) { installer = candidate; break; }
+            }
+            if (installer == null)
+            {
+                Debug.LogWarning("[FurniturePlacement] FurnitureInstaller tidak ditemukan.");
+                return;
+            }
+            installer.EnterMode();
         }
 
         CancelSelection();
@@ -256,6 +275,7 @@ public class FurniturePlacementController : MonoBehaviour
         _ghost = instance;
         _data = data;
         _isMoving = true;
+        _simsPlacementMode = true;
         IsPlacing = true;
         _ghostValid = true;
         _ghostRotY = instance.transform.eulerAngles.y;
@@ -293,6 +313,7 @@ public class FurniturePlacementController : MonoBehaviour
         }
         _data = null;
         _sourceCard = null;
+        _simsPlacementMode = false;
     }
 
     /// <summary>Tutup kartu info seleksi (jika terbuka).</summary>
@@ -311,7 +332,7 @@ public class FurniturePlacementController : MonoBehaviour
     private void HandlePlacement()
     {
         // Batalkan saat keluar furniture mode (mis. tombol Kembali)
-        if (!IsFurnitureModeActive())
+        if (!_simsPlacementMode && !IsFurnitureModeActive())
         {
             CancelPlacement();
             return;
@@ -437,7 +458,7 @@ public class FurniturePlacementController : MonoBehaviour
 
         CancelPlacement();
         FurnitureManager.Instance.AddFurniture(data, pos, rot);
-        card?.OnPlacementComplete();
+        if (card != null) { card.OnPlacementComplete(); } else { var cfg = FurnitureConfigPanel.Instance ?? FindFirstObjectByType<FurnitureConfigPanel>(FindObjectsInactive.Include); if (cfg != null) cfg.Open(data); }
     }
 
     private bool HasValidPlacementSpace()
@@ -561,7 +582,7 @@ public class FurniturePlacementController : MonoBehaviour
             return;
         }
 
-        if (!IsFurnitureModeActive())
+        if (!IsFurnitureModeActive() && SimsInventoryUI.Instance == null)
         {
             CancelSelection();
             return;

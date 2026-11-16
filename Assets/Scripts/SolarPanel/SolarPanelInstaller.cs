@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
@@ -84,6 +84,7 @@ public class SolarPanelInstaller : MonoBehaviour
     private bool isTransitioning = false;       // Sedang transisi kamera
     private bool homeStatePreset = false;       // true saat home state di-set dari installer lain
     private List<GameObject> placedPanels = new();
+    public int InstalledPanelCount => placedPanels.Count;
     private Dictionary<GameObject, GameObject> panelToCard = new(); // panel GO → card GO
     private int totalPanelCounter = 0;          // Counter nomor panel (tidak reset saat hapus)
 

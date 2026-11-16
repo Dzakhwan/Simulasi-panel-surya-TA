@@ -63,7 +63,7 @@ public class FurnitureInstaller : MonoBehaviour
             EnterMode();
     }
 
-    private void EnterMode()
+    public void EnterMode()
     {
         bool wasRoofMode    = SolarPanelInstaller.Instance != null && SolarPanelInstaller.Instance.IsRoofMode;
         bool wasBatteryMode = BatteryInstaller.Instance    != null && BatteryInstaller.Instance.IsInstallMode;
