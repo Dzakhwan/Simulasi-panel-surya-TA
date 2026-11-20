@@ -77,8 +77,18 @@ public class CableManager : MonoBehaviour
     {
         get
         {
-            if (_resolvedAnchors.Length == 0) _resolvedAnchors = ResolveInverterAnchors();
+            _resolvedAnchors = ResolveInverterAnchors();
             return _resolvedAnchors;
+        }
+    }
+
+    /// <summary>Jumlah inverter aktif yang terpasang di rumah.</summary>
+    public int InverterCount
+    {
+        get
+        {
+            _resolvedAnchors = ResolveInverterAnchors();
+            return _resolvedAnchors.Length;
         }
     }
 
@@ -215,6 +225,59 @@ public class CableManager : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// Mendaftarkan inverter baru saat dipasang dari inventory.
+    /// Memperbarui anchor dan menyambungkan kembali kabel ke inverter terdekat.
+    /// </summary>
+    public void RegisterInverter(GameObject inverter)
+    {
+        if (inverter == null) return;
+        GetOrCreateAnchor(inverter.transform);
+        _resolvedAnchors = ResolveInverterAnchors();
+        Debug.Log($"[CableManager] Inverter '{inverter.name}' berhasil didaftarkan. Total Inverter: {_resolvedAnchors.Length}");
+        RefreshAllCables();
+    }
+
+    /// <summary>
+    /// Menghapus pendaftaran inverter saat dihapus dari rumah.
+    /// Memutuskan kabel yang tersambung ke inverter ini.
+    /// </summary>
+    public void UnregisterInverter(GameObject inverter)
+    {
+        if (inverter == null) return;
+        _resolvedAnchors = ResolveInverterAnchors();
+        Debug.Log($"[CableManager] Inverter '{inverter.name}' dihapus. Sisa Inverter: {_resolvedAnchors.Length}");
+        RefreshAllCables();
+    }
+
+    /// <summary>
+    /// Memperbarui seluruh rute kabel di rumah (misal saat Inverter dipindahkan atau dihapus).
+    /// </summary>
+    public void RefreshAllCables()
+    {
+        _resolvedAnchors = ResolveInverterAnchors();
+        _anchorLoad.Clear();
+
+        if (FurnitureManager.Instance == null) return;
+
+        var connectedList = new List<GameObject>(_cables.Keys);
+        foreach (var instance in connectedList)
+        {
+            if (instance == null) continue;
+
+            if (FurnitureManager.Instance.TryGetDataOf(instance, out var data))
+            {
+                Disconnect(instance);
+
+                if (_resolvedAnchors.Length > 0)
+                {
+                    Connect(instance, data);
+                }
+            }
+        }
+        Debug.Log($"[CableManager] Seluruh rute kabel diperbarui ({connectedList.Count} furnitur terhubung).");
+    }
+
     // ── Internal ────────────────────────────────────────────────────────────
 
     private static int BuildAutoObstacleMask()
@@ -240,8 +303,10 @@ public class CableManager : MonoBehaviour
         {
             foreach (var tr in FindObjectsByType<Transform>(FindObjectsSortMode.None))
             {
-                if (tr != null && tr.name.Contains("Inverter"))
+                if (tr != null && tr.name.Contains("Inverter") && !tr.name.StartsWith("Ghost_") && tr.name != "CableAnchor" && tr.gameObject.activeInHierarchy)
+                {
                     list.Add(GetOrCreateAnchor(tr));
+                }
             }
         }
 
@@ -270,8 +335,13 @@ public class CableManager : MonoBehaviour
 
     private Transform PickInverter(Vector3 fromPos)
     {
+        if (_resolvedAnchors == null || _resolvedAnchors.Length == 0)
+            _resolvedAnchors = ResolveInverterAnchors();
+        if (_resolvedAnchors == null || _resolvedAnchors.Length == 0)
+            return null;
+
         float bestDist = float.MaxValue;
-        Transform best = _resolvedAnchors[0];
+        Transform best = null;
 
         foreach (var anchor in _resolvedAnchors)
         {
@@ -281,8 +351,12 @@ public class CableManager : MonoBehaviour
             d += load * 40f; // tie-break: merata ke beberapa inverter
             if (d < bestDist) { bestDist = d; best = anchor; }
         }
-        if (!_anchorLoad.ContainsKey(best)) _anchorLoad[best] = 0;
-        _anchorLoad[best]++;
+
+        if (best != null)
+        {
+            if (!_anchorLoad.ContainsKey(best)) _anchorLoad[best] = 0;
+            _anchorLoad[best]++;
+        }
         return best;
     }
 

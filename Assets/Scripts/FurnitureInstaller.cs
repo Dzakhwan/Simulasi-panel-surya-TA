@@ -74,11 +74,14 @@ public class FurnitureInstaller : MonoBehaviour
 
         _isFurnitureMode = true;
 
-        // Animasikan slide-in panel dari kiri (mirip UI Left SP)
-        if (uiLeftSlider != null)
-            uiLeftSlider.SlideIn();
-        else if (uiLeft != null)
-            uiLeft.SetActive(true);
+        // Animasikan slide-in panel dari kiri jika SimsInventoryUI tidak aktif
+        if (SimsInventoryUI.Instance == null)
+        {
+            if (uiLeftSlider != null)
+                uiLeftSlider.SlideIn();
+            else if (uiLeft != null)
+                uiLeft.SetActive(true);
+        }
 
         // Jika orbit sedang disabled (artinya baru exit dari mode lain), jalankan transisi
         // kamera dari posisi saat ini (misalnya atap) ke posisi orbit home, lalu re-enable orbit.

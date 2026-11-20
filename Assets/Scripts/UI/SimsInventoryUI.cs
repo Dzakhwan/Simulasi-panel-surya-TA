@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -52,7 +52,20 @@ public class SimsInventoryUI : MonoBehaviour
     public Color tileGreenBottom = new Color(0.12f, 0.60f, 0.22f, 1f);    // #1F9938
     public Color badgeRed = new Color(0.93f, 0.12f, 0.15f, 1f);          // #ED1F26
 
-    // UI Roots
+    [Header("Scene UI References (Dibuat di Scene Mode)")]
+    [Tooltip("Root objek Bottom Bar yang bisa diatur posisinya di Scene View")]
+    public GameObject bottomBarRoot;
+    [Tooltip("Tombol Tutup / Kembali floating di Scene View")]
+    public GameObject closeInventoryButton;
+    [Tooltip("Modal popup Home Store")]
+    public GameObject storeModalRoot;
+    [Tooltip("Content parent di dalam Store ScrollView")]
+    public GameObject storeContentParent;
+    public TextMeshProUGUI cartBadgeText;
+    public TextMeshProUGUI storeTitleText;
+    public List<GameObject> tabButtons = new();
+
+    // Private UI runtime handles
     private GameObject _simsRoot;
     private GameObject _bottomBarRoot;
     private GameObject _storeModalRoot;
@@ -64,6 +77,11 @@ public class SimsInventoryUI : MonoBehaviour
     private StoreCategory _currentCategory = StoreCategory.Semua;
     private bool _isStoreOpen = false;
     private GameObject _modeBackButton;
+    private GameObject _closeInventoryButton;
+    
+    // Cached legacy UI transforms for continuous suppression
+    private Transform[] _cachedLegacyTransforms;
+    private bool _legacyCacheReady = false;
 
     private void Awake()
     {
@@ -89,6 +107,9 @@ public class SimsInventoryUI : MonoBehaviour
 
     private void Update()
     {
+        // Continuously suppress legacy UI panels (they get re-activated by installer ToggleMode/EnterMode)
+        SuppressLegacyPanels();
+
         if (SimulationManager.Instance != null)
         {
             bool simRunning = SimulationManager.Instance.IsSimulationRunning;
@@ -104,6 +125,154 @@ public class SimsInventoryUI : MonoBehaviour
         {
             CloseStore();
         }
+
+        // Show/hide close button based on active mode
+        UpdateCloseButtonVisibility();
+    }
+
+    /// <summary>
+    /// Suppress legacy UI panels setiap frame. Installer ToggleMode() dan EnterMode() 
+    /// memanggil SlideIn() pada panel lama, jadi kita perlu menyembunyikannya terus-menerus.
+    /// </summary>
+    private void SuppressLegacyPanels()
+    {
+        if (!_legacyCacheReady)
+        {
+            CacheLegacyTransforms();
+            _legacyCacheReady = true;
+        }
+
+        if (_cachedLegacyTransforms == null) return;
+
+        for (int i = 0; i < _cachedLegacyTransforms.Length; i++)
+        {
+            Transform t = _cachedLegacyTransforms[i];
+            if (t == null) continue;
+
+            // Untuk 'Instal buttons', jangan di-deactivate karena mengandung komponen FurnitureInstaller.
+            // Sebagai gantinya, pasang CanvasGroup agar 100% transparan dan tidak merespon klik/touch.
+            if (t.name == "Instal buttons")
+            {
+                var cg = t.GetComponent<CanvasGroup>();
+                if (cg == null) cg = t.gameObject.AddComponent<CanvasGroup>();
+                cg.alpha = 0f;
+                cg.interactable = false;
+                cg.blocksRaycasts = false;
+                if (!t.gameObject.activeSelf)
+                    t.gameObject.SetActive(true);
+            }
+            else
+            {
+                // UI Left, UI Left SP, UI Left Batt
+                var cg = t.GetComponent<CanvasGroup>();
+                if (cg == null) cg = t.gameObject.AddComponent<CanvasGroup>();
+                cg.alpha = 0f;
+                cg.interactable = false;
+                cg.blocksRaycasts = false;
+
+                if (t.gameObject.activeSelf)
+                    t.gameObject.SetActive(false);
+            }
+        }
+    }
+
+    private void CacheLegacyTransforms()
+    {
+        Canvas canvas = FindFirstObjectByType<Canvas>();
+        if (canvas == null) { _cachedLegacyTransforms = new Transform[0]; return; }
+
+        string[] names = { "UI Left", "UI Left SP", "UI Left Batt", "Instal buttons" };
+        var list = new System.Collections.Generic.List<Transform>();
+        foreach (var n in names)
+        {
+            Transform t = canvas.transform.Find(n);
+            if (t != null) list.Add(t);
+        }
+        _cachedLegacyTransforms = list.ToArray();
+    }
+
+    /// <summary>
+    /// Update visibilitas close button berdasarkan apakah ada mode installer aktif.
+    /// </summary>
+    private void UpdateCloseButtonVisibility()
+    {
+        bool anyModeActive = IsAnyInstallerModeActive();
+
+        if (_closeInventoryButton != null)
+            _closeInventoryButton.SetActive(anyModeActive && !_isStoreOpen);
+
+        // Tampilkan bottom bar hanya saat tidak ada mode aktif dan store tidak terbuka
+        if (_bottomBarRoot != null && !anyModeActive && !_isStoreOpen)
+        {
+            bool simRunning = SimulationManager.Instance != null && SimulationManager.Instance.IsSimulationRunning;
+            if (!simRunning)
+                _bottomBarRoot.SetActive(true);
+        }
+    }
+
+    /// <summary>
+    /// Cek apakah ada mode installer yang sedang aktif.
+    /// </summary>
+    private bool IsAnyInstallerModeActive()
+    {
+        // Check furniture mode
+        var fInstallers = FindObjectsByType<FurnitureInstaller>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (var fi in fInstallers)
+            if (fi != null && fi.IsFurnitureMode) return true;
+
+        // Check solar panel mode
+        if (SolarPanelInstaller.Instance != null && SolarPanelInstaller.Instance.IsRoofMode)
+            return true;
+
+        // Check battery mode
+        if (BatteryInstaller.Instance != null && BatteryInstaller.Instance.IsInstallMode)
+            return true;
+
+        // Check furniture placement actively placing
+        if (FurniturePlacementController.Instance != null && FurniturePlacementController.Instance.IsPlacing)
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Keluar dari SEMUA mode installer dan kembali ke tampilan awal.
+    /// </summary>
+    public void ExitAllModes()
+    {
+        // Exit furniture mode
+        var furnitureInstallers = FindObjectsByType<FurnitureInstaller>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (var fi in furnitureInstallers)
+        {
+            if (fi != null && fi.IsFurnitureMode)
+                fi.ForceExitMode();
+        }
+
+        // Exit solar panel mode 
+        if (SolarPanelInstaller.Instance != null && SolarPanelInstaller.Instance.IsRoofMode)
+            SolarPanelInstaller.Instance.ToggleMode(); // Use ToggleMode for proper camera transition back
+
+        // Exit battery mode
+        if (BatteryInstaller.Instance != null && BatteryInstaller.Instance.IsInstallMode)
+            BatteryInstaller.Instance.ToggleMode(); // Use ToggleMode for proper camera transition back
+
+        // Cancel any active furniture placement
+        if (FurniturePlacementController.Instance != null)
+            FurniturePlacementController.Instance.CancelPlacement();
+
+        // Close store if open
+        if (_isStoreOpen)
+            CloseStore();
+
+        // Reset close button dan tampilkan bottom bar
+        if (_closeInventoryButton != null) _closeInventoryButton.SetActive(false);
+        if (_modeBackButton != null) _modeBackButton.SetActive(false);
+        if (_bottomBarRoot != null) _bottomBarRoot.SetActive(true);
+
+        // Suppress legacy UI immediately
+        SuppressLegacyPanels();
+
+        Debug.Log("[SimsInventoryUI] Semua mode keluar - kembali ke tampilan awal.");
     }
 
     private void LoadResourcesIfNeeded()
@@ -169,6 +338,27 @@ public class SimsInventoryUI : MonoBehaviour
             }
         }
 
+        // Pastikan Inverter terdaftar di katalog furnitur
+        bool hasInverter = false;
+        foreach (var f in furnitureList)
+        {
+            if (f != null && f.furnitureName.Contains("Inverter")) { hasInverter = true; break; }
+        }
+
+        if (!hasInverter)
+        {
+            var allData = Resources.FindObjectsOfTypeAll<FurnitureData>();
+            foreach (var d in allData)
+            {
+                if (d != null && d.furnitureName.Contains("Inverter"))
+                {
+                    furnitureList.Add(d);
+                    hasInverter = true;
+                    break;
+                }
+            }
+        }
+
         if (solarPanelList.Count == 0)
         {
             var spCat = FindFirstObjectByType<SolarPanelCatalogUI>(FindObjectsInactive.Include);
@@ -190,47 +380,28 @@ public class SimsInventoryUI : MonoBehaviour
 
     private void DeactivateLegacyUI()
     {
-        Canvas canvas = FindFirstObjectByType<Canvas>();
-        if (canvas == null) return;
-
-        string[] legacyNames = new string[]
-        {
-            "UI Left",
-            "UI Left SP",
-            "UI Left Batt",
-            "Instal buttons"
-        };
-
-        foreach (var n in legacyNames)
-        {
-            Transform t = canvas.transform.Find(n);
-            if (t != null)
-            {
-                t.gameObject.SetActive(false);
-            }
-        }
+        SuppressLegacyPanels();
     }
     private void BuildSimsUIHierarchy()
     {
-        Canvas canvas = GetComponentInParent<Canvas>();
-        if (canvas == null) canvas = FindFirstObjectByType<Canvas>();
+        Canvas canvas = GetComponentInParent<Canvas>() ?? FindFirstObjectByType<Canvas>();
         if (canvas == null)
         {
             Debug.LogError("[SimsInventoryUI] Tidak ditemukan Canvas di scene!");
             return;
         }
 
-        if (sceneLayoutRoot != null)
+        // 1. Cek apakah hierarchy UI SUDAH ADA di Scene (dibuat di Scene Mode / Editor)
+        if (TryBindExistingSceneUI(canvas))
         {
-            _simsRoot = sceneLayoutRoot.gameObject;
-            foreach (Transform child in _simsRoot.transform)
-                Destroy(child.gameObject);
+            Debug.Log("[SimsInventoryUI] Berhasil mengikat UI dari Scene Mode. Posisi dipertahankan 100%.");
+            return;
         }
-        else
-        {
-            _simsRoot = new GameObject("SimsInventory_Root", typeof(RectTransform));
-            _simsRoot.transform.SetParent(canvas.transform, false);
-        }
+
+        // 2. Fallback: buat otomatis saat runtime jika scene belum memiliki hierarki UI
+        Debug.Log("[SimsInventoryUI] UI belum ada di scene, membuat fallback runtime UI.");
+        _simsRoot = new GameObject("SimsInventory_Root", typeof(RectTransform));
+        _simsRoot.transform.SetParent(canvas.transform, false);
         RectTransform rootRt = _simsRoot.GetComponent<RectTransform>();
         rootRt.anchorMin = Vector2.zero;
         rootRt.anchorMax = Vector2.one;
@@ -238,8 +409,138 @@ public class SimsInventoryUI : MonoBehaviour
         rootRt.offsetMax = Vector2.zero;
 
         BuildBottomBar(_simsRoot.transform);
+        BuildCloseInventoryButton(_simsRoot.transform);
         BuildModeBackButton(_simsRoot.transform);
         BuildStoreModal(_simsRoot.transform);
+    }
+
+    /// <summary>
+    /// Mencari dan mengikat elemen UI yang sudah ada di Scene View tanpa menghancurkan
+    /// atau mereset posisi yang sudah diatur oleh pengguna di Editor.
+    /// </summary>
+    public bool TryBindExistingSceneUI(Canvas canvas)
+    {
+        Transform root = sceneLayoutRoot != null ? sceneLayoutRoot : canvas.transform.Find("SimsInventory_Root");
+        if (root == null)
+        {
+            Transform bb = canvas.transform.Find("SimsBottomBar");
+            if (bb == null && bottomBarRoot == null) return false;
+            root = canvas.transform;
+        }
+
+        _simsRoot = root.gameObject;
+
+        // 1. Bottom Bar
+        _bottomBarRoot = bottomBarRoot != null ? bottomBarRoot : root.Find("SimsBottomBar")?.gameObject;
+        if (_bottomBarRoot != null)
+        {
+            Transform btnEl = _bottomBarRoot.transform.Find("BtnAlatElektronik");
+            if (btnEl != null)
+            {
+                var b = btnEl.GetComponent<Button>();
+                if (b != null) { b.onClick.RemoveAllListeners(); b.onClick.AddListener(() => OpenStore(StoreCategory.Semua)); }
+            }
+
+            Transform btnSP = _bottomBarRoot.transform.Find("BtnPanelSurya");
+            if (btnSP != null)
+            {
+                var b = btnSP.GetComponent<Button>();
+                if (b != null) { b.onClick.RemoveAllListeners(); b.onClick.AddListener(() => OpenStore(StoreCategory.PanelSurya)); }
+            }
+
+            Transform btnBat = _bottomBarRoot.transform.Find("BtnBaterai");
+            if (btnBat != null)
+            {
+                var b = btnBat.GetComponent<Button>();
+                if (b != null) { b.onClick.RemoveAllListeners(); b.onClick.AddListener(() => OpenStore(StoreCategory.Baterai)); }
+            }
+        }
+
+        // 2. Close Button
+        _closeInventoryButton = closeInventoryButton != null ? closeInventoryButton : root.Find("CloseInventoryBtn")?.gameObject;
+        if (_closeInventoryButton != null)
+        {
+            var b = _closeInventoryButton.GetComponent<Button>();
+            if (b != null) { b.onClick.RemoveAllListeners(); b.onClick.AddListener(ExitAllModes); }
+            _closeInventoryButton.SetActive(false);
+        }
+
+        // 3. Store Modal
+        _storeModalRoot = storeModalRoot != null ? storeModalRoot : root.Find("TheHomeStore_Modal")?.gameObject;
+        if (_storeModalRoot != null)
+        {
+            var scrimBtn = _storeModalRoot.GetComponent<Button>();
+            if (scrimBtn != null) { scrimBtn.onClick.RemoveAllListeners(); scrimBtn.onClick.AddListener(CloseStore); }
+
+            Transform dialog = _storeModalRoot.transform.Find("DialogPanel");
+            if (dialog != null)
+            {
+                Transform header = dialog.Find("HeaderBanner");
+                if (header != null)
+                {
+                    Transform title = header.Find("TitleText");
+                    if (title != null) _storeTitleText = title.GetComponent<TextMeshProUGUI>();
+                }
+
+                Transform backBtn = dialog.Find("BackButton");
+                if (backBtn != null)
+                {
+                    var b = backBtn.GetComponent<Button>();
+                    if (b != null) { b.onClick.RemoveAllListeners(); b.onClick.AddListener(CloseStore); }
+                }
+
+                Transform cartBtn = dialog.Find("CartButton");
+                if (cartBtn != null)
+                {
+                    Transform badge = cartBtn.Find("CartBadge");
+                    if (badge != null)
+                    {
+                        Transform bgt = badge.Find("BadgeText");
+                        if (bgt != null) _cartBadgeText = bgt.GetComponent<TextMeshProUGUI>();
+                    }
+                }
+
+                Transform tabsBar = dialog.Find("CategoryTabsBar");
+                _tabButtons.Clear();
+                if (tabsBar != null)
+                {
+                    for (int i = 0; i < tabsBar.childCount; i++)
+                    {
+                        Transform child = tabsBar.GetChild(i);
+                        _tabButtons.Add(child.gameObject);
+                        int catIdx = i;
+                        var btn = child.GetComponent<Button>();
+                        if (btn != null)
+                        {
+                            btn.onClick.RemoveAllListeners();
+                            btn.onClick.AddListener(() => SelectCategory((StoreCategory)catIdx));
+                        }
+                    }
+                }
+
+                Transform scrollView = dialog.Find("StoreScrollView");
+                if (scrollView != null)
+                {
+                    Transform view = scrollView.Find("Viewport");
+                    if (view != null)
+                    {
+                        Transform content = view.Find("Content");
+                        if (content != null) _storeContentParent = content.gameObject;
+                    }
+                }
+            }
+
+            _storeModalRoot.SetActive(false);
+        }
+
+        if (bottomBarRoot == null) bottomBarRoot = _bottomBarRoot;
+        if (closeInventoryButton == null) closeInventoryButton = _closeInventoryButton;
+        if (storeModalRoot == null) storeModalRoot = _storeModalRoot;
+        if (storeContentParent == null) storeContentParent = _storeContentParent;
+        if (cartBadgeText == null) cartBadgeText = _cartBadgeText;
+        if (storeTitleText == null) storeTitleText = _storeTitleText;
+
+        return (_bottomBarRoot != null || _storeModalRoot != null);
     }
 
     private void BuildBottomBar(Transform parent)
@@ -301,18 +602,15 @@ public class SimsInventoryUI : MonoBehaviour
 
     private void ExitInstallerMode()
     {
-        SolarPanelInstaller.Instance?.ForceExitMode();
-        BatteryInstaller.Instance?.ForceExitMode();
-        _modeBackButton?.SetActive(false);
-        _bottomBarRoot?.SetActive(true);
-        HideLegacyPlacementUI();
+        ExitAllModes();
     }
 
     private void ShowInstallerBackButton()
     {
-        _modeBackButton?.SetActive(true);
+        // Now handled by UpdateCloseButtonVisibility in Update()
+        // Just hide bottom bar immediately
         _bottomBarRoot?.SetActive(false);
-        HideLegacyPlacementUI();
+        SuppressLegacyPanels();
     }
 
     private void CreateDockButton(Transform parent, string goName, string label, Sprite icon, Color topColor, Color bottomColor, Action onClick)
@@ -378,6 +676,75 @@ public class SimsInventoryUI : MonoBehaviour
         btn.onClick.AddListener(() => onClick?.Invoke());
 
         btnGO.AddComponent<UIButtonHoverScale>();
+    }
+
+    /// <summary>
+    /// Tombol close inventory floating di pojok kanan bawah. Tampil saat mode installer aktif.
+    /// Menutup mode instalasi dan mengembalikan tampilan awal ke rumah.
+    /// </summary>
+    private void BuildCloseInventoryButton(Transform parent)
+    {
+        _closeInventoryButton = new GameObject("CloseInventoryBtn", typeof(RectTransform), typeof(Image), typeof(Button), typeof(Outline), typeof(UISoftShadow));
+        _closeInventoryButton.transform.SetParent(parent, false);
+
+        RectTransform rt = _closeInventoryButton.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(1f, 0f);
+        rt.anchorMax = new Vector2(1f, 0f);
+        rt.pivot = new Vector2(1f, 0f);
+        rt.anchoredPosition = new Vector2(-28f, 22f);
+        rt.sizeDelta = new Vector2(185f, 65f);
+
+        Image img = _closeInventoryButton.GetComponent<Image>();
+        img.sprite = roundedBoxSprite;
+        img.type = Image.Type.Sliced;
+        img.color = badgeRed;
+
+        var outline = _closeInventoryButton.GetComponent<Outline>();
+        outline.effectColor = Color.white;
+        outline.effectDistance = new Vector2(2.5f, -2.5f);
+
+        var shadow = _closeInventoryButton.GetComponent<UISoftShadow>();
+        shadow.shadowColor = new Color(0.4f, 0f, 0f, 0.45f);
+        shadow.shadowOffset = new Vector2(2f, -3f);
+
+        GameObject iconGO = new GameObject("XIcon", typeof(RectTransform), typeof(TextMeshProUGUI));
+        iconGO.transform.SetParent(_closeInventoryButton.transform, false);
+        RectTransform iconRt = iconGO.GetComponent<RectTransform>();
+        iconRt.anchorMin = new Vector2(0f, 0f);
+        iconRt.anchorMax = new Vector2(0.28f, 1f);
+        iconRt.offsetMin = Vector2.zero;
+        iconRt.offsetMax = Vector2.zero;
+        var iconTmp = iconGO.GetComponent<TextMeshProUGUI>();
+        if (fontAsset != null) iconTmp.font = fontAsset;
+        iconTmp.text = "✕";
+        iconTmp.fontSize = 24f;
+        iconTmp.fontStyle = FontStyles.Bold;
+        iconTmp.alignment = TextAlignmentOptions.Center;
+        iconTmp.color = Color.white;
+        iconTmp.raycastTarget = false;
+
+        GameObject lblGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+        lblGO.transform.SetParent(_closeInventoryButton.transform, false);
+        RectTransform lblRt = lblGO.GetComponent<RectTransform>();
+        lblRt.anchorMin = new Vector2(0.25f, 0f);
+        lblRt.anchorMax = new Vector2(1f, 1f);
+        lblRt.offsetMin = Vector2.zero;
+        lblRt.offsetMax = Vector2.zero;
+        var lblTmp = lblGO.GetComponent<TextMeshProUGUI>();
+        if (fontAsset != null) lblTmp.font = fontAsset;
+        lblTmp.text = "Tutup Mode";
+        lblTmp.fontSize = 15f;
+        lblTmp.fontStyle = FontStyles.Bold;
+        lblTmp.alignment = TextAlignmentOptions.Center;
+        lblTmp.color = Color.white;
+        lblTmp.raycastTarget = false;
+
+        Button btn = _closeInventoryButton.GetComponent<Button>();
+        btn.targetGraphic = img;
+        btn.onClick.AddListener(ExitAllModes);
+
+        _closeInventoryButton.AddComponent<UIButtonHoverScale>();
+        _closeInventoryButton.SetActive(false);
     }
 
     private void BuildStoreModal(Transform parent)
@@ -710,6 +1077,41 @@ public class SimsInventoryUI : MonoBehaviour
 
         _isStoreOpen = false;
         _storeModalRoot.SetActive(false);
+
+        // Jika tidak sedang menempatkan ghost furnitur (tidak ada item aktif), pastikan keluar dari installer mode
+        // agar kamera dan UI kembali ke tampilan awal permainan
+        if (FurniturePlacementController.Instance != null && !FurniturePlacementController.Instance.IsPlacing)
+        {
+            var furnitureInstallers = FindObjectsByType<FurnitureInstaller>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var fi in furnitureInstallers)
+            {
+                if (fi != null && fi.IsFurnitureMode)
+                    fi.ExitMode();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Membuka kembali The Home Store pada kategori terakhir setelah penempatan furnitur selesai.
+    /// Memberikan jeda 1 frame agar EventSystem dan state tombol penempatan selesai dengan bersih.
+    /// </summary>
+    public void ReopenStore()
+    {
+        if (_storeModalRoot == null) return;
+        StopCoroutine(nameof(ReopenStoreRoutine));
+        StartCoroutine(nameof(ReopenStoreRoutine));
+    }
+
+    private IEnumerator ReopenStoreRoutine()
+    {
+        yield return null;
+        if (_storeModalRoot == null) yield break;
+
+        _isStoreOpen = true;
+        _storeModalRoot.SetActive(true);
+        SelectCategory(_currentCategory);
+        UpdateCartBadge();
+        Debug.Log($"[SimsInventoryUI] ReopenStore otomatis terbuka kembali pada kategori {_currentCategory}.");
     }
 
     public void SelectCategory(StoreCategory category)
@@ -785,20 +1187,45 @@ public class SimsInventoryUI : MonoBehaviour
                 if (_currentCategory != StoreCategory.Semua && itemCat != _currentCategory)
                     continue;
 
-                string badge = $"{fData.wattConsumption}W";
-                string subtitle = $"{fData.wattConsumption} Watt";
+                bool isInv = fData.furnitureName.Contains("Inverter");
+                string badge = isInv ? "5000W" : $"{fData.wattConsumption}W";
+                string subtitle = isInv ? "Konverter DC-AC" : $"{fData.wattConsumption} Watt";
+                Sprite tileIcon = isInv && fData.icon == null ? electricityIconSprite : fData.icon;
 
                 FurnitureData localData = fData;
                 CreateItemTile(
                     localData.furnitureName,
-                    localData.icon,
+                    tileIcon,
                     badge,
                     subtitle,
-                    tileCyanTop,
-                    tileCyanBottom,
+                    isInv ? tileOrangeTop : tileCyanTop,
+                    isInv ? tileOrangeBottom : tileCyanBottom,
                     () => OnFurnitureSelected(localData),
                     badgeRed
                 );
+            }
+        }
+
+        if (_currentCategory == StoreCategory.PanelSurya)
+        {
+            // Tampilkan Inverter juga di tab Panel Surya sebagai komponen sistem surya
+            foreach (var fData in furnitureList)
+            {
+                if (fData != null && fData.furnitureName.Contains("Inverter"))
+                {
+                    FurnitureData localData = fData;
+                    Sprite tileIcon = localData.icon != null ? localData.icon : electricityIconSprite;
+                    CreateItemTile(
+                        localData.furnitureName,
+                        tileIcon,
+                        "5000W",
+                        "Konverter DC-AC",
+                        tileOrangeTop,
+                        tileOrangeBottom,
+                        () => OnFurnitureSelected(localData),
+                        badgeRed
+                    );
+                }
             }
         }
 
@@ -1023,29 +1450,20 @@ public class SimsInventoryUI : MonoBehaviour
         if (!installer.IsFurnitureMode)
             installer.EnterMode();
 
-        foreach (var legacyUi in GameObject.FindObjectsByType<GameObject>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-        {
-            if (legacyUi.name == "UI Left" || legacyUi.name == "UI Left SP" || legacyUi.name == "UI Left Batt" || legacyUi.name == "Instal buttons")
-                legacyUi.SetActive(false);
-        }
+        SuppressLegacyPanels();
 
-        HideLegacyPlacementUI();
         if (FurniturePlacementController.Instance != null)
         {
             FurniturePlacementController.Instance.BeginPlacementFromSims(data);
             Debug.Log($"[SimsInventoryUI] Memulai penempatan: {data.furnitureName}");
         }
+
+        UpdateCloseButtonVisibility();
     }
 
     private void HideLegacyPlacementUI()
     {
-        Canvas canvas = FindFirstObjectByType<Canvas>();
-        if (canvas == null) return;
-        foreach (Transform child in canvas.transform)
-        {
-            if (child.name == "UI Left" || child.name == "UI Left SP" || child.name == "UI Left Batt" || child.name == "Instal buttons")
-                child.gameObject.SetActive(false);
-        }
+        SuppressLegacyPanels();
     }
 
     private void OnSolarPanelSelected(SolarPanelData data)
@@ -1059,8 +1477,8 @@ public class SimsInventoryUI : MonoBehaviour
             {
                 SolarPanelInstaller.Instance.ToggleMode();
             }
-            HideLegacyPlacementUI();
-            ShowInstallerBackButton();
+            SuppressLegacyPanels();
+            UpdateCloseButtonVisibility();
             Debug.Log($"[SimsInventoryUI] Panel Surya terpilih: {data.panelName}");
         }
     }
@@ -1076,8 +1494,8 @@ public class SimsInventoryUI : MonoBehaviour
             {
                 BatteryInstaller.Instance.ToggleMode();
             }
-            HideLegacyPlacementUI();
-            ShowInstallerBackButton();
+            SuppressLegacyPanels();
+            UpdateCloseButtonVisibility();
             Debug.Log($"[SimsInventoryUI] Baterai terpilih: {data.battName}");
         }
 

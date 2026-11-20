@@ -219,6 +219,12 @@ public class FurnitureManager : MonoBehaviour
         // Animasi kemunculan
         PlayPlaceAnimation(instance);
 
+        // Jika yang dipasang adalah Inverter, daftarkan ke CableManager
+        if (data.furnitureName.Contains("Inverter"))
+        {
+            CableManager.Instance?.RegisterInverter(instance);
+        }
+
         Debug.Log($"[FurnitureManager] {data.furnitureName} ({data.wattConsumption}W) instance #{_instances.Count} ditambahkan. Total: {TotalWattConsumed}W");
 
         // ── SolarEdu Tracking ──
@@ -248,6 +254,12 @@ public class FurnitureManager : MonoBehaviour
         // Kabel terkait ikut dihapus sebelum objek dihancurkan
         if (CableManager.Instance != null)
             CableManager.Instance.Disconnect(instance);
+
+        // Jika Inverter dihapus, unregister dari CableManager agar kabel re-route/terputus
+        if (data.furnitureName.Contains("Inverter"))
+        {
+            CableManager.Instance?.UnregisterInverter(instance);
+        }
 
         Destroy(instance);
 

@@ -806,6 +806,8 @@ public class BatteryInstaller : MonoBehaviour
 
     private void ShowUILeftBatt()
     {
+        if (SimsInventoryUI.Instance != null) return;
+
         if (uiLeftSlider != null)
         {
             uiLeftSlider.SlideIn();

@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8ef6642bf31aacd4a81d28d5e3028c0e, type: 3}
+  m_Name: Inverter
+  m_EditorClassIdentifier: Assembly-CSharp::FurnitureData
+  furnitureName: Inverter
+  icon: {fileID: 21300000, guid: 63fc2723be3525c48b8ccabe9af772d6, type: 3}
+  prefab3D: {fileID: 7784656764028515208, guid: 3c55711f440aeea41b4bb487894f77d6, type: 3}
+  fixedPosition: {x: 3071.886, y: 455.5, z: 414.354}
+  fixedRotation: {x: 0, y: 0, z: 0}
+  fixedScale: {x: 18.347424, y: -26.413334, z: 19.82788}
+  wattConsumption: 0
+  description: Inverter DC-AC untuk menyuplai daya dari panel surya dan baterai ke seluruh peralatan rumah.
