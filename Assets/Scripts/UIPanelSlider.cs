@@ -157,6 +157,12 @@ public class UIPanelSlider : MonoBehaviour
 
     public void SlideOut(System.Action onComplete = null)
     {
+        if (!gameObject.activeInHierarchy)
+        {
+            onComplete?.Invoke();
+            return;
+        }
+
         EnsurePositionsCached();
 
         _isVisible = false;

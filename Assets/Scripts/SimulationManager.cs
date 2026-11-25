@@ -49,6 +49,7 @@ public class SimulationManager : MonoBehaviour
     private float _elapsedSimHours = 0f;
     private bool _inResultsState = false;
     private bool _lastPlacementActive = false;
+    private bool _freeModeBeforeSimulation;
     private SunController _sunController;
 
     void Awake()
@@ -294,10 +295,15 @@ public class SimulationManager : MonoBehaviour
         if (furnitureConfigPanel != null && furnitureConfigPanel.gameObject.activeSelf)
             furnitureConfigPanel.gameObject.SetActive(false);
 
-        // Aktifkan free mode agar player bisa jalan bebas selama simulasi
         var roomFocus = FindFirstObjectByType<RoomFocusManager>();
         if (roomFocus != null)
-            roomFocus.ForceEnterFreeMode();
+        {
+            _freeModeBeforeSimulation = roomFocus.IsFreeMode;
+            if (_freeModeBeforeSimulation)
+                roomFocus.ForceEnterFreeMode();
+            else
+                roomFocus.ForceExitFreeMode();
+        }
 
         var orbitCam = Camera.main != null ? Camera.main.GetComponent<OrbitCamera>() : null;
         if (orbitCam != null)
@@ -329,7 +335,12 @@ public class SimulationManager : MonoBehaviour
         // Nonaktifkan free mode dan aktifkan kembali OrbitCamera saat simulasi selesai
         var roomFocusOnStop = FindFirstObjectByType<RoomFocusManager>();
         if (roomFocusOnStop != null)
-            roomFocusOnStop.ForceExitFreeMode();
+        {
+            if (_freeModeBeforeSimulation)
+                roomFocusOnStop.ForceEnterFreeMode();
+            else
+                roomFocusOnStop.ForceExitFreeMode();
+        }
 
         // Aktifkan kembali OrbitCamera jika sempat di-disable
         var orbitCam = Camera.main != null ? Camera.main.GetComponent<OrbitCamera>() : null;

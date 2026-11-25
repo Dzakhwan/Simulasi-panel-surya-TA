@@ -38,7 +38,8 @@ public class Cable3DTextured : MonoBehaviour
     [SerializeField] int electronCount = 15;
     [SerializeField] float electronSpeed = 2f;
     [SerializeField] float electronRadius = 0.06f;
-    [SerializeField] Color electronColor = new Color(1f, 0.9f, 0.2f);
+    [SerializeField] Color electronColor = new Color(0.1f, 0.45f, 1f);
+    [SerializeField] ElectronFlowType flowType = ElectronFlowType.InverterToAppliance;
 
     [Header("Spawn Rate Elektron")]
     [Tooltip("Daya referensi (Watt) di mana spawn interval paling cepat tercapai.")]
@@ -119,6 +120,7 @@ public class Cable3DTextured : MonoBehaviour
             : CreateFallbackMaterial(Color.gray);
 
         _sunController = FindFirstObjectByType<SunController>();
+        ApplyElectronManagerSettings();
 
         BuildSpline();
         BuildMesh();
@@ -438,6 +440,14 @@ public class Cable3DTextured : MonoBehaviour
     // =========================================================
     // Elektron
     // =========================================================
+
+    void ApplyElectronManagerSettings()
+    {
+        var manager = ElectronManager.Instance ?? FindFirstObjectByType<ElectronManager>();
+        if (manager == null) return;
+        electronSpeed = manager.defaultSpeed;
+        electronColor = manager.GetColor(flowType);
+    }
 
     void CreateElectrons()
     {

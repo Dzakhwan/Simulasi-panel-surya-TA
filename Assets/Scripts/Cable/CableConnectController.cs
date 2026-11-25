@@ -190,6 +190,11 @@ public class CableConnectController : MonoBehaviour
         Debug.Log("[CableConnect] Mode sambung aktif — ketuk alat untuk menyambung, ketuk kosong untuk batal.");
     }
 
+    public void CancelCableConnection()
+    {
+        ExitConnectMode();
+    }
+
     private void ExitConnectMode()
     {
         if (!_connectMode && _banner == null) return;

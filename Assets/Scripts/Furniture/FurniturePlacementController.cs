@@ -163,6 +163,8 @@ public class FurniturePlacementController : MonoBehaviour
             floorLayerMask = LayerMask.GetMask("Floor");
         if (wallLayerMask.value == 0)
             wallLayerMask = LayerMask.GetMask("Wall");
+        if (rotationStep < 90f)
+            rotationStep = 90f;
 
         Canvas canvas = FindOverlayCanvas();
         if (canvas != null)
@@ -186,6 +188,13 @@ public class FurniturePlacementController : MonoBehaviour
         }
 
         HandleSelection();
+        if (_selectedInstance != null)
+        {
+            if (GameInput.Player.RotateLeft.WasPressedThisFrame())
+                RotateSelectedFurniture(-rotationStep);
+            else if (GameInput.Player.RotateRight.WasPressedThisFrame())
+                RotateSelectedFurniture(rotationStep);
+        }
         UpdateFloatingSelectionUI();
     }
 
@@ -217,7 +226,7 @@ public class FurniturePlacementController : MonoBehaviour
         if (scenePlacementUI != null)
         {
             if (sceneBtnConfirm == null) sceneBtnConfirm = scenePlacementUI.transform.Find("BtnConfirm")?.GetComponent<Button>();
-            if (sceneBtnRotate == null) sceneBtnRotate = scenePlacementUI.transform.Find("BtnRotate")?.GetComponent<Button>();
+            if (sceneBtnRotate == null) sceneBtnRotate = FindChildComponent<Button>(scenePlacementUI.transform, "BtnRotate");
             if (sceneBtnCancel == null) sceneBtnCancel = scenePlacementUI.transform.Find("BtnCancel")?.GetComponent<Button>();
             if (sceneMoveGizmoPlacement == null) sceneMoveGizmoPlacement = scenePlacementUI.transform.Find("MoveGizmo")?.gameObject;
             if (sceneNameLabelPlacement == null) sceneNameLabelPlacement = scenePlacementUI.transform.Find("NameLabel")?.gameObject;
@@ -236,7 +245,7 @@ public class FurniturePlacementController : MonoBehaviour
         {
             if (sceneBtnDelete == null) sceneBtnDelete = sceneSelectionUI.transform.Find("BtnHapus")?.GetComponent<Button>();
             if (sceneBtnCable == null) sceneBtnCable = sceneSelectionUI.transform.Find("BtnKabel")?.GetComponent<Button>();
-            if (sceneBtnRotateSelection == null) sceneBtnRotateSelection = sceneSelectionUI.transform.Find("BtnRotate")?.GetComponent<Button>();
+            if (sceneBtnRotateSelection == null) sceneBtnRotateSelection = FindChildComponent<Button>(sceneSelectionUI.transform, "BtnRotate");
             if (sceneBtnMove == null) sceneBtnMove = sceneSelectionUI.transform.Find("BtnPindah")?.GetComponent<Button>();
             if (sceneBtnClock == null) sceneBtnClock = sceneSelectionUI.transform.Find("BtnJam")?.GetComponent<Button>();
             if (sceneMoveGizmoSelection == null) sceneMoveGizmoSelection = sceneSelectionUI.transform.Find("MoveGizmo")?.gameObject;
@@ -613,7 +622,8 @@ public class FurniturePlacementController : MonoBehaviour
 
     private void RotateGhost(float degrees)
     {
-        _ghostRotY = Mathf.Round((_ghostRotY + degrees) / 90f) * 90f;
+        float step = (Mathf.Abs(degrees) < 45f) ? 90f * Mathf.Sign(degrees) : degrees;
+        _ghostRotY = Mathf.Round((_ghostRotY + step) / 90f) * 90f;
         if (_ghost != null)
         {
             if (IsWallMounted(_data) && _hasWallNormal)
@@ -632,13 +642,24 @@ public class FurniturePlacementController : MonoBehaviour
     }
 
     /// <summary>Rotasi furnitur yang sedang dipilih sebesar 90 derajat.</summary>
+    public void RotateSelectedFurniture90()
+    {
+        RotateSelectedFurniture(90f);
+    }
+
     public void RotateSelectedFurniture(float degrees = 90f)
     {
-        if (_selectedInstance == null) return;
+        if (_selectedInstance == null)
+        {
+            Debug.LogWarning("[FurniturePlacement] Rotate gagal: tidak ada furnitur terpilih.");
+            return;
+        }
 
+        float step = (Mathf.Abs(degrees) < 45f) ? 90f * Mathf.Sign(degrees) : degrees;
         Vector3 cur = _selectedInstance.transform.eulerAngles;
-        float newY = Mathf.Round((cur.y + degrees) / 90f) * 90f;
+        float newY = Mathf.Round((cur.y + step) / 90f) * 90f;
         _selectedInstance.transform.rotation = Quaternion.Euler(cur.x, newY, cur.z);
+        Debug.Log($"[FurniturePlacement] Rotate sukses: {_selectedInstance.name}, rotY={newY:F0}");
 
         // Jika Inverter yang dirotasi, perbarui seluruh rute kabel
         if (_selectedInstance != null && _selectedInstance.name.Contains("Inverter"))
@@ -676,7 +697,7 @@ public class FurniturePlacementController : MonoBehaviour
             if (sceneBtnRotate != null)
             {
                 sceneBtnRotate.onClick.RemoveAllListeners();
-                sceneBtnRotate.onClick.AddListener(() => RotateGhost(rotationStep));
+                sceneBtnRotate.onClick.AddListener(() => RotateGhost(90f));
             }
             if (sceneBtnCancel != null)
             {
@@ -868,13 +889,21 @@ public class FurniturePlacementController : MonoBehaviour
                 });
             }
 
+            sceneBtnRotateSelection = FindChildComponent<Button>(sceneSelectionUI.transform, "BtnRotate");
             if (sceneBtnRotateSelection != null)
             {
                 sceneBtnRotateSelection.onClick.RemoveAllListeners();
                 sceneBtnRotateSelection.onClick.AddListener(() =>
                 {
-                    RotateSelectedFurniture(rotationStep);
+                    if (_selectedInstance == null && instance != null)
+                        _selectedInstance = instance;
+                    RotateSelectedFurniture(90f);
                 });
+                Debug.Log("[FurniturePlacement] Selection rotate bound: BtnRotate");
+            }
+            else
+            {
+                Debug.LogWarning($"[FurniturePlacement] Rotate gagal: BtnRotate tidak ditemukan di '{sceneSelectionUI.name}'.");
             }
 
             if (sceneBtnClock != null)
@@ -1288,6 +1317,14 @@ public class FurniturePlacementController : MonoBehaviour
         return labelGO;
     }
 
+    private static T FindChildComponent<T>(Transform root, string childName) where T : Component
+    {
+        if (root == null) return null;
+        foreach (var component in root.GetComponentsInChildren<T>(true))
+            if (component.name == childName) return component;
+        return null;
+    }
+
     /// <summary>Posisikan floating icon berdasarkan posisi world + sudut offset melingkar.</summary>
     private void PositionFloatingIcon(GameObject icon, Vector3 worldCenter, float radius,
         float angleDeg, RectTransform canvasRt, Camera uiCam)
@@ -1304,9 +1341,12 @@ public class FurniturePlacementController : MonoBehaviour
             if (rt != null)
             {
                 Rect canvasRect = canvasRt.rect;
-                float margin = floatingIconSize * 0.5f + 5f;
-                local.x = Mathf.Clamp(local.x, canvasRect.xMin + margin, canvasRect.xMax - margin);
-                local.y = Mathf.Clamp(local.y, canvasRect.yMin + margin, canvasRect.yMax - margin);
+                Vector2 size = rt.rect.size;
+                Vector2 pivot = rt.pivot;
+                float marginX = Mathf.Max(8f, size.x * Mathf.Max(pivot.x, 1f - pivot.x) + 8f);
+                float marginY = Mathf.Max(8f, size.y * Mathf.Max(pivot.y, 1f - pivot.y) + 8f);
+                local.x = Mathf.Clamp(local.x, canvasRect.xMin + marginX, canvasRect.xMax - marginX);
+                local.y = Mathf.Clamp(local.y, canvasRect.yMin + marginY, canvasRect.yMax - marginY);
                 rt.anchoredPosition = local;
             }
         }
@@ -1351,7 +1391,7 @@ public class FurniturePlacementController : MonoBehaviour
         }
     }
 
-    private void CommitPlacement()
+    public void CommitPlacement()
     {
         if (_ghost == null || !_ghost.activeSelf || !_ghostValid)
         {
@@ -1635,7 +1675,9 @@ public class FurniturePlacementController : MonoBehaviour
         }
 
         if (!_tapReleased) return;
-        if (GameInput.IsPointerOverInteractiveUI(GameInput.PointerPosition)) return;
+        // Periksa apakah pointer berada di atas UI interaktif, baik posisi awal tekan (_pressStart) maupun posisi pointer saat ini
+        if (GameInput.IsPointerOverInteractiveUI(_pressStart) || GameInput.IsPointerOverInteractiveUI(GameInput.PointerPosition))
+            return;
 
         if (TryPickFurniture(GameInput.PointerPosition, out GameObject picked))
         {

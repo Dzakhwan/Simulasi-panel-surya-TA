@@ -1426,8 +1426,6 @@ public class SimsInventoryUI : MonoBehaviour
 
     private void OnFurnitureSelected(FurnitureData data)
     {
-        CloseStore();
-
         FurnitureInstaller installer = null;
         var installers = FindObjectsByType<FurnitureInstaller>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         foreach (var candidate in installers)
@@ -1455,6 +1453,7 @@ public class SimsInventoryUI : MonoBehaviour
         if (FurniturePlacementController.Instance != null)
         {
             FurniturePlacementController.Instance.BeginPlacementFromSims(data);
+            CloseStore();
             Debug.Log($"[SimsInventoryUI] Memulai penempatan: {data.furnitureName}");
         }
 

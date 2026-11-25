@@ -122,6 +122,8 @@ public class RoomFocusManager : MonoBehaviour
         UpdateFreeModeUI();
     }
 
+    public bool IsFreeMode => isFreeMode;
+
     public void ForceEnterFreeMode()
     {
         isFreeMode = true;
